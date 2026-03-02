@@ -1,0 +1,5 @@
+{
+  "name": "PDF Toolbox",
+  "description": "A simple tool to unlock, merge, and split PDF files directly in your browser.",
+  "requestFramePermissions": []
+}
