@@ -403,13 +403,21 @@ const processUnlock = async () => {
                   ))}
                 </AnimatePresence>
 
-                {activeTool === 'merge' && (
-                  <label className="flex items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-100 rounded-2xl cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-200 transition-all text-sm text-indigo-500 font-semibold">
-                    <Plus size={18} />
-                    さらにファイルを追加
-                    <input type="file" className="hidden" accept="application/pdf" multiple onChange={handleFileChange} />
-                  </label>
-                )}
+{activeTool === 'merge' && (
+  <div
+    onDragOver={handleDragOver}
+    onDragLeave={handleDragLeave}
+    onDrop={handleDrop}
+    className="flex items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-100 rounded-2xl cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-200 transition-all text-sm text-indigo-500 font-semibold"
+  >
+    <label className="flex items-center justify-center gap-2 w-full cursor-pointer">
+      <Plus size={18} />
+      さらにファイルを追加
+      <input type="file" className="hidden" accept="application/pdf" multiple onChange={handleFileChange} />
+    </label>
+  </div>
+)}
+
 
                 <div className="pt-6">
                   <button
