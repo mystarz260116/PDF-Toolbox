@@ -93,32 +93,46 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-  const processUnlock = async () => {
-    if (files.length === 0) return;
-    setIsProcessing(true);
-    setError(null);
-    try {
-      const { file, password } = files[0];
-      const arrayBuffer = await file.arrayBuffer();
-      // Load the original encrypted PDF
-      const sourcePdf = await PDFDocument.load(arrayBuffer, { password } as any);
-      
-      // Create a brand new PDF document
-      const unlockedPdf = await PDFDocument.create();
-      
-      // Copy all pages from the source to the new document
-      // This process effectively strips the encryption metadata
-      const contentPages = await unlockedPdf.copyPages(sourcePdf, sourcePdf.getPageIndices());
-      contentPages.forEach((page) => unlockedPdf.addPage(page));
-      
-      const pdfBytes = await unlockedPdf.save();
-      downloadBlob(new Blob([pdfBytes], { type: 'application/pdf' }), `unlocked_${file.name}`);
-    } catch (err: any) {
-      setError('PDFのロック解除に失敗しました。パスワードが正しいか確認してください。');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+const processUnlock = async () => {
+  if (files.length === 0) return;
+  setIsProcessing(true);
+  setError(null);
+  try {
+    const { file, password } = files[0];
+    const arrayBuffer = await file.arrayBuffer();
+    
+    // ✅ パスワードを指定してPDFを読み込む
+    const sourcePdf = await PDFDocument.load(arrayBuffer, { 
+      password: password || ''
+    } as any);
+    
+    // ✅ 新しいPDFを作成（重要：暗号化なしで）
+    const unlockedPdf = await PDFDocument.create();
+    
+    // ✅ すべてのページをコピー
+    const pageIndices = sourcePdf.getPageIndices();
+    const copiedPages = await unlockedPdf.copyPages(sourcePdf, pageIndices);
+    copiedPages.forEach((page) => unlockedPdf.addPage(page));
+    
+    // ✅ 暗号化を明示的に削除
+    // pdf-libでは save() の時点で暗号化されないので、
+    // ここで追加処理は不要ですが、念のため確認します
+    const pdfBytes = await unlockedPdf.save();
+    
+    downloadBlob(
+      new Blob([pdfBytes], { type: 'application/pdf' }), 
+      `unlocked_${file.name}`
+    );
+    
+    setFiles([]); // 処理後にファイルをリセット
+  } catch (err: any) {
+    console.error('Unlock error:', err);
+    setError('PDFのロック解除に失敗しました。パスワードが正しいか、対応したPDFか確認してください。');
+  } finally {
+    setIsProcessing(false);
+  }
+};
+
 
   const processMerge = async () => {
     if (files.length < 2) return;
