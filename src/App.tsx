@@ -297,14 +297,14 @@ export default function App() {
       let jpegQuality = 0.85;
       
       if (compressLevel === 'light') {
-        scale = 2;
-        jpegQuality = 0.90;
+        scale = 1;
+        jpegQuality = 0.60;
       } else if (compressLevel === 'standard') {
         scale = 1.5;
         jpegQuality = 0.75;
       } else if (compressLevel === 'maximum') {
-        scale = 1;
-        jpegQuality = 0.60;
+        scale = 2;
+        jpegQuality = 0.90;
       }
       
       for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
@@ -502,7 +502,7 @@ export default function App() {
                       >
                         軽量
                         <br />
-                        <span className="text-xs font-normal">品質優先</span>
+                        <span className="text-xs font-normal">最小サイズ</span>
                       </button>
                       <button
                         onClick={() => setCompressLevel('standard')}
@@ -526,7 +526,7 @@ export default function App() {
                       >
                         最大
                         <br />
-                        <span className="text-xs font-normal">最小サイズ</span>
+                        <span className="text-xs font-normal">品質優先</span>
                       </button>
                     </div>
                   </div>
