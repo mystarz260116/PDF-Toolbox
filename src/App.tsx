@@ -115,11 +115,15 @@ const processUnlock = async () => {
     console.log('ファイル名:', file.name);
     console.log('パスワード:', password ? '入力されている' : '入力されていない');
     
+    // ✅ ArrayBufferをコピーする（重要！）
+    const arrayBuffer1 = arrayBuffer.slice(0);
+    const arrayBuffer2 = arrayBuffer.slice(0);
+    
     // ✅ ステップ1：pdfjs-distでパスワード認証を確認
     console.log('パスワード認証を確認中...');
     const pdfjsLib = (window as any).pdfjsLib;
     const pdfDocCheck = await pdfjsLib.getDocument({
-      data: arrayBuffer,
+      data: arrayBuffer1,
       password: password || '',
       useSystemFonts: true
     }).promise;
@@ -128,7 +132,7 @@ const processUnlock = async () => {
     
     // ✅ ステップ2：pdf-libで直接ページをコピー（軽い＆高品質）
     console.log('pdf-libでPDFを処理中...');
-    const sourcePdf = await PDFDocument.load(arrayBuffer, { 
+    const sourcePdf = await PDFDocument.load(arrayBuffer2, { 
       ignoreEncryption: true
     } as any);
     
