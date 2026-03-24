@@ -20,6 +20,17 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
+// pdfjs-distをCDNから読み込む
+declare global {
+  interface Window {
+    pdfjsWorker: any;
+  }
+}
+
+const pdfjsLib = (window as any).pdfjsLib;
+
+
+
 type Tool = 'unlock' | 'merge' | 'split';
 
 const TOOL_LABELS: Record<Tool, string> = {
@@ -93,22 +104,95 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-  const processUnlock = async () => {
-    if (files.length === 0) return;
-    setIsProcessing(true);
-    setError(null);
-    try {
-      const { file, password } = files[0];
-      const arrayBuffer = await file.arrayBuffer();
-      const pdfDoc = await PDFDocument.load(arrayBuffer, { password } as any);
-      const pdfBytes = await pdfDoc.save();
-      downloadBlob(new Blob([pdfBytes], { type: 'application/pdf' }), `unlocked_${file.name}`);
-    } catch (err: any) {
-      setError('PDFのロック解除に失敗しました。パスワードが正しいか確認してください。');
-    } finally {
-      setIsProcessing(false);
+const processUnlock = async () => {
+  if (files.length === 0) return;
+  setIsProcessing(true);
+  setError(null);
+  try {
+    const { file, password } = files[0];
+    const arrayBuffer = await file.arrayBuffer();
+    
+    console.log('ファイル名:', file.name);
+    console.log('パスワード:', password ? '入力されている' : '入力されていない');
+    
+    // ✅ pdfjs-dist を使ってPDFを読み込む
+    const pdfDoc = await pdfjsLib.getDocument({
+      data: arrayBuffer,
+      password: password || '',
+      useSystemFonts: true
+    }).promise;
+    
+    console.log('PDF読み込み成功。ページ数:', pdfDoc.numPages);
+    
+    // ✅ pdf-lib で新しいPDFを作成
+    const unlockedPdf = await PDFDocument.create();
+    
+    // ✅ pdfjs-dist で読み込んだPDFから、各ページをキャンバスに描画
+    // そしてそれを pdf-lib に追加する
+    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+      console.log(`ページ ${pageNum} を処理中...`);
+      
+      const page = await pdfDoc.getPage(pageNum);
+      
+      // キャンバスにページを描画
+      const scale = 2; // 高品質のため2倍にスケール
+      const viewport = page.getViewport({ scale });
+      
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      
+      const context = canvas.getContext('2d');
+      if (!context) {
+        throw new Error('キャンバスコンテキストが取得できません');
+      }
+      
+      await page.render({
+        canvasContext: context,
+        viewport: viewport
+      }).promise;
+      
+      // キャンバスから画像データを取得
+      const imageData = canvas.toDataURL('image/png');
+      const imageBytes = await fetch(imageData).then(res => res.arrayBuffer());
+      
+      // pdf-lib に画像を埋め込み
+      const image = await unlockedPdf.embedPng(imageBytes);
+      
+      // 新しいページを追加
+      const pdfPage = unlockedPdf.addPage([viewport.width / scale, viewport.height / scale]);
+      pdfPage.drawImage(image, {
+        x: 0,
+        y: 0,
+        width: viewport.width / scale,
+        height: viewport.height / scale
+      });
     }
-  };
+    
+    // ✅ 新しいPDFを保存
+    const pdfBytes = await unlockedPdf.save();
+    
+    console.log('PDF保存成功。ファイルサイズ:', pdfBytes.length);
+    
+    downloadBlob(
+      new Blob([pdfBytes], { type: 'application/pdf' }), 
+      `unlocked_${file.name}`
+    );
+    
+    setFiles([]);
+    setError(null);
+    console.log('ロック解除完了！');
+  } catch (err: any) {
+    console.error('Unlock error:', err);
+    console.error('エラー詳細:', err.message);
+    setError(`ロック解除に失敗しました。\nエラー: ${err.message}`);
+  } finally {
+    setIsProcessing(false);
+  }
+};
+
+
+
 
   const processMerge = async () => {
     if (files.length < 2) return;
