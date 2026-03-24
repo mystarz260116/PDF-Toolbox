@@ -502,7 +502,7 @@ export default function App() {
                       >
                         軽量
                         <br />
-                        <span className="text-xs font-normal">品質優先</span>
+                        <span className="text-xs font-normal">小サイズ</span>
                       </button>
                       <button
                         onClick={() => setCompressLevel('standard')}
@@ -526,7 +526,7 @@ export default function App() {
                       >
                         最大
                         <br />
-                        <span className="text-xs font-normal">最小サイズ</span>
+                        <span className="text-xs font-normal">品質優先</span>
                       </button>
                     </div>
                   </div>
