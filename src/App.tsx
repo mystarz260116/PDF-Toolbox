@@ -31,30 +31,34 @@ const pdfjsLib = (window as any).pdfjsLib;
 
 
 
-type Tool = 'unlock' | 'merge' | 'split';
+type Tool = 'unlock' | 'merge' | 'split' | 'compress';
 
 const TOOL_LABELS: Record<Tool, string> = {
   unlock: 'ロック解除',
   merge: '結合する',
-  split: '分割する'
+  split: '分割する',
+  compress: '圧縮する'
 };
 
 const TOOL_COLORS: Record<Tool, string> = {
   unlock: 'bg-rose-500',
   merge: 'bg-indigo-500',
-  split: 'bg-amber-500'
+  split: 'bg-amber-500',
+  compress: 'bg-cyan-500'
 };
 
 const TOOL_BG_LIGHT: Record<Tool, string> = {
   unlock: 'bg-rose-50',
   merge: 'bg-indigo-50',
-  split: 'bg-amber-50'
+  split: 'bg-amber-50',
+  compress: 'bg-cyan-50'
 };
 
 const TOOL_TEXT: Record<Tool, string> = {
   unlock: 'text-rose-600',
   merge: 'text-indigo-600',
-  split: 'text-amber-600'
+  split: 'text-amber-600',
+  compress: 'text-cyan-600'
 };
 
 interface FileItem {
@@ -68,6 +72,7 @@ export default function App() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+    const [compressLevel, setCompressLevel] = useState<'light' | 'standard' | 'maximum'>('standard');
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -284,11 +289,118 @@ const processUnlock = async () => {
     }
   };
 
-  const handleAction = () => {
-    if (activeTool === 'unlock') processUnlock();
-    else if (activeTool === 'merge') processMerge();
-    else if (activeTool === 'split') processSplit();
-  };
+  const processCompress = async () => {
+  if (files.length === 0) return;
+  setIsProcessing(true);
+  setError(null);
+  try {
+    const { file, password } = files[0];
+    const arrayBuffer = await file.arrayBuffer();
+    
+    console.log('ファイル名:', file.name);
+    console.log('圧縮レベル:', compressLevel);
+    console.log('元のファイルサイズ:', file.size);
+    
+    // ✅ pdfjs-dist を使ってPDFを読み込む
+    const pdfjsLib = (window as any).pdfjsLib;
+    const pdfDoc = await pdfjsLib.getDocument({
+      data: arrayBuffer,
+      password: password || '',
+      useSystemFonts: true
+    }).promise;
+    
+    console.log('PDF読み込み成功。ページ数:', pdfDoc.numPages);
+    
+    // ✅ pdf-lib で新しいPDFを作成
+    const compressedPdf = await PDFDocument.create();
+    
+    // ✅ 圧縮レベルに応じてスケールを設定
+    let scale = 2;
+    let jpegQuality = 0.85;
+    
+    if (compressLevel === 'light') {
+      scale = 2;
+      jpegQuality = 0.90; // 高品質（圧縮少なめ）
+    } else if (compressLevel === 'standard') {
+      scale = 1.5;
+      jpegQuality = 0.75; // 標準品質（バランス）
+    } else if (compressLevel === 'maximum') {
+      scale = 1;
+      jpegQuality = 0.60; // 低品質（圧縮強め）
+    }
+    
+    // ✅ 各ページをJPEG画像に変換して圧縮
+    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+      console.log(`ページ ${pageNum} を圧縮中... (${compressLevel})`);
+      
+      const page = await pdfDoc.getPage(pageNum);
+      const viewport = page.getViewport({ scale });
+      
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      
+      const context = canvas.getContext('2d');
+      if (!context) {
+        throw new Error('キャンバスコンテキストが取得できません');
+      }
+      
+      await page.render({
+        canvasContext: context,
+        viewport: viewport
+      }).promise;
+      
+      // ✅ JPEG品質を設定して圧縮
+      const imageData = canvas.toDataURL('image/jpeg', jpegQuality);
+      const imageBytes = await fetch(imageData).then(res => res.arrayBuffer());
+      
+      // pdf-lib に画像を埋め込み
+      const image = await compressedPdf.embedJpg(imageBytes);
+      
+      // 新しいページを追加
+      const pdfPage = compressedPdf.addPage([viewport.width / scale, viewport.height / scale]);
+      pdfPage.drawImage(image, {
+        x: 0,
+        y: 0,
+        width: viewport.width / scale,
+        height: viewport.height / scale
+      });
+    }
+    
+    // ✅ 圧縮されたPDFを保存
+    const pdfBytes = await compressedPdf.save();
+    
+    const originalSize = file.size;
+    const compressedSize = pdfBytes.length;
+    const ratio = ((1 - compressedSize / originalSize) * 100).toFixed(1);
+    
+    console.log('圧縮完了！');
+    console.log('元のサイズ:', (originalSize / 1024 / 1024).toFixed(2), 'MB');
+    console.log('圧縮後:', (compressedSize / 1024 / 1024).toFixed(2), 'MB');
+    console.log('圧縮率:', ratio, '%');
+    
+    downloadBlob(
+      new Blob([pdfBytes], { type: 'application/pdf' }), 
+      `compressed_${file.name}`
+    );
+    
+    setFiles([]);
+    setError(null);
+  } catch (err: any) {
+    console.error('Compress error:', err);
+    console.error('エラー詳細:', err.message);
+    setError(`PDFの圧縮に失敗しました。\nエラー: ${err.message}`);
+  } finally {
+    setIsProcessing(false);
+  }
+};
+
+const handleAction = () => {
+  if (activeTool === 'unlock') processUnlock();
+  else if (activeTool === 'merge') processMerge();
+  else if (activeTool === 'split') processSplit();
+  else if (activeTool === 'compress') processCompress();
+};
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center py-12 px-4">
@@ -303,6 +415,7 @@ const processUnlock = async () => {
               {activeTool === 'unlock' && <Unlock size={24} />}
               {activeTool === 'merge' && <Combine size={24} />}
               {activeTool === 'split' && <Scissors size={24} />}
+              {activeTool === 'compress' && <FileUp size={24} />}
             </div>
           </div>
           <h1 className="text-4xl font-bold tracking-tight text-slate-900 mb-2">PDF Toolbox</h1>
@@ -311,7 +424,7 @@ const processUnlock = async () => {
 
         {/* Tool Selector */}
         <div className="flex p-1.5 bg-slate-200/50 rounded-2xl mb-8">
-          {(['merge', 'split', 'unlock'] as Tool[]).map((tool) => (
+          {(['merge', 'split', 'compress', 'unlock'] as Tool[]).map((tool) => (
             <button
               key={tool}
               onClick={() => {
@@ -328,6 +441,7 @@ const processUnlock = async () => {
               {tool === 'unlock' && <Unlock size={16} />}
               {tool === 'merge' && <Combine size={16} />}
               {tool === 'split' && <Scissors size={16} />}
+              {tool === 'compress' && <FileUp size={16} />}  // ← この1行を追加
               <span>{TOOL_LABELS[tool]}</span>
             </button>
           ))}
@@ -403,6 +517,50 @@ const processUnlock = async () => {
                   ))}
                 </AnimatePresence>
 
+                {activeTool === 'compress' && files.length > 0 && (
+                  <div className="p-4 bg-cyan-50 rounded-2xl border border-cyan-100">
+                    <p className="text-sm font-semibold text-cyan-900 mb-3">圧縮レベルを選択</p>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => setCompressLevel('light')}
+                        className={`flex-1 py-2 px-3 rounded-xl text-sm font-semibold transition-all ${
+                          compressLevel === 'light'
+                            ? 'bg-cyan-500 text-white'
+                            : 'bg-white text-cyan-600 border border-cyan-200 hover:bg-cyan-100'
+                        }`}
+                      >
+                        軽量
+                        <br />
+                        <span className="text-xs font-normal">品質優先</span>
+                      </button>
+                      <button
+                        onClick={() => setCompressLevel('standard')}
+                        className={`flex-1 py-2 px-3 rounded-xl text-sm font-semibold transition-all ${
+                          compressLevel === 'standard'
+                            ? 'bg-cyan-500 text-white'
+                            : 'bg-white text-cyan-600 border border-cyan-200 hover:bg-cyan-100'
+                        }`}
+                      >
+                        標準
+                        <br />
+                        <span className="text-xs font-normal">バランス</span>
+                      </button>
+                      <button
+                        onClick={() => setCompressLevel('maximum')}
+                        className={`flex-1 py-2 px-3 rounded-xl text-sm font-semibold transition-all ${
+                          compressLevel === 'maximum'
+                            ? 'bg-cyan-500 text-white'
+                            : 'bg-white text-cyan-600 border border-cyan-200 hover:bg-cyan-100'
+                        }`}
+                      >
+                        最大
+                        <br />
+                        <span className="text-xs font-normal">最小サイズ</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
 {activeTool === 'merge' && (
   <div
     onDragOver={handleDragOver}
@@ -436,6 +594,7 @@ const processUnlock = async () => {
                         {activeTool === 'unlock' && 'ロック解除して保存'}
                         {activeTool === 'merge' && '結合して保存'}
                         {activeTool === 'split' && '分割して保存'}
+                        {activeTool === 'compress' && '圧縮して保存'}  // ← この1行を追加
                       </>
                     )}
                   </button>
