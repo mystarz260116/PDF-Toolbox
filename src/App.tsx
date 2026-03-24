@@ -113,44 +113,63 @@ const processUnlock = async () => {
     const arrayBuffer = await file.arrayBuffer();
     
     console.log('ファイル名:', file.name);
-    console.log('パスワード:', password ? '入力されている' : '入力されていない');
+    console.log('ファイルサイズ:', file.size);
     
-    // ✅ ArrayBufferをコピーする（重要！）
-    const arrayBuffer1 = arrayBuffer.slice(0);
-    const arrayBuffer2 = arrayBuffer.slice(0);
-    
-    // ✅ ステップ1：pdfjs-distでパスワード認証を確認
-    console.log('パスワード認証を確認中...');
+    // ✅ pdfjs-dist を使ってPDFを読み込む
     const pdfjsLib = (window as any).pdfjsLib;
-    const pdfDocCheck = await pdfjsLib.getDocument({
-      data: arrayBuffer1,
+    const pdfDoc = await pdfjsLib.getDocument({
+      data: arrayBuffer,
       password: password || '',
       useSystemFonts: true
     }).promise;
     
-    console.log('パスワード認証成功。ページ数:', pdfDocCheck.numPages);
+    console.log('PDF読み込み成功。ページ数:', pdfDoc.numPages);
     
-    // ✅ ステップ2：pdf-libで直接ページをコピー（軽い＆高品質）
-    console.log('pdf-libでPDFを処理中...');
-    const sourcePdf = await PDFDocument.load(arrayBuffer2, { 
-      ignoreEncryption: true
-    } as any);
-    
-    console.log('PDF読み込み成功。ページ数:', sourcePdf.getPageCount());
-    
-    // ✅ ステップ3：新しいPDFを作成
+    // ✅ pdf-lib で新しいPDFを作成
     const unlockedPdf = await PDFDocument.create();
     
-    // ✅ ステップ4：すべてのページをコピー
-    const pageIndices = sourcePdf.getPageIndices();
-    console.log('ページインデックス:', pageIndices);
+    // ✅ 各ページをJPEG画像に変換（PNG→JPEGで圧縮）
+    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+      console.log(`ページ ${pageNum} を処理中...`);
+      
+      const page = await pdfDoc.getPage(pageNum);
+      
+      // キャンバスにページを描画
+      const scale = 4; // 品質設定
+      const viewport = page.getViewport({ scale });
+      
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      
+      const context = canvas.getContext('2d');
+      if (!context) {
+        throw new Error('キャンバスコンテキストが取得できません');
+      }
+      
+      await page.render({
+        canvasContext: context,
+        viewport: viewport
+      }).promise;
+      
+      // ✅ キャンバスからJPEG画像データを取得（圧縮）
+      const imageData = canvas.toDataURL('image/jpeg', 0.85); // 85%圧縮
+      const imageBytes = await fetch(imageData).then(res => res.arrayBuffer());
+      
+      // pdf-lib に画像を埋め込み
+      const image = await unlockedPdf.embedJpg(imageBytes);
+      
+      // 新しいページを追加
+      const pdfPage = unlockedPdf.addPage([viewport.width / scale, viewport.height / scale]);
+      pdfPage.drawImage(image, {
+        x: 0,
+        y: 0,
+        width: viewport.width / scale,
+        height: viewport.height / scale
+      });
+    }
     
-    const copiedPages = await unlockedPdf.copyPages(sourcePdf, pageIndices);
-    copiedPages.forEach((page) => unlockedPdf.addPage(page));
-    
-    console.log('ページコピー完了。新規PDF内のページ数:', unlockedPdf.getPageCount());
-    
-    // ✅ ステップ5：暗号化なしでPDFを保存
+    // ✅ 新しいPDFを保存
     const pdfBytes = await unlockedPdf.save();
     
     console.log('PDF保存成功。ファイルサイズ:', pdfBytes.length);
@@ -171,6 +190,7 @@ const processUnlock = async () => {
     setIsProcessing(false);
   }
 };
+
 
 
 
