@@ -100,8 +100,18 @@ export default function App() {
     try {
       const { file, password } = files[0];
       const arrayBuffer = await file.arrayBuffer();
-      const pdfDoc = await PDFDocument.load(arrayBuffer, { password } as any);
-      const pdfBytes = await pdfDoc.save();
+      // Load the original encrypted PDF
+      const sourcePdf = await PDFDocument.load(arrayBuffer, { password } as any);
+      
+      // Create a brand new PDF document
+      const unlockedPdf = await PDFDocument.create();
+      
+      // Copy all pages from the source to the new document
+      // This process effectively strips the encryption metadata
+      const contentPages = await unlockedPdf.copyPages(sourcePdf, sourcePdf.getPageIndices());
+      contentPages.forEach((page) => unlockedPdf.addPage(page));
+      
+      const pdfBytes = await unlockedPdf.save();
       downloadBlob(new Blob([pdfBytes], { type: 'application/pdf' }), `unlocked_${file.name}`);
     } catch (err: any) {
       setError('PDFのロック解除に失敗しました。パスワードが正しいか確認してください。');
