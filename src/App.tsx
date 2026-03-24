@@ -85,6 +85,50 @@ export default function App() {
     }
   };
 
+  
+  // ✅ ここから新しいコードを追加
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.classList.add('border-indigo-400', 'bg-indigo-50');
+    e.currentTarget.classList.remove('border-slate-200');
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.classList.remove('border-indigo-400', 'bg-indigo-50');
+    e.currentTarget.classList.add('border-slate-200');
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.classList.remove('border-indigo-400', 'bg-indigo-50');
+    e.currentTarget.classList.add('border-slate-200');
+    
+    if (e.dataTransfer.files) {
+      const newFiles = Array.from(e.dataTransfer.files)
+        .filter(file => file.type === 'application/pdf')
+        .map(file => ({
+          id: Math.random().toString(36).substr(2, 9),
+          file
+        }));
+      
+      if (newFiles.length > 0) {
+        if (activeTool === 'merge') {
+          setFiles(prev => [...prev, ...newFiles]);
+        } else {
+          setFiles(newFiles.slice(0, 1));
+        }
+        setError(null);
+      } else {
+        setError('PDFファイルのみアップロード可能です。');
+      }
+    }
+  };
+  // ✅ ここまで新しいコード
+
   const removeFile = (id: string) => {
     setFiles(prev => prev.filter(f => f.id !== id));
   };
@@ -292,28 +336,34 @@ const processUnlock = async () => {
         {/* Main Workspace */}
         <div className="bg-white rounded-3xl border border-slate-200 shadow-xl shadow-slate-200/50 overflow-hidden">
           <div className="p-8">
-            {files.length === 0 ? (
-              <label className={`flex flex-col items-center justify-center w-full h-72 border-2 border-dashed border-slate-200 rounded-2xl cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-all group relative overflow-hidden`}>
-                <div className="flex flex-col items-center justify-center pt-5 pb-6 relative z-10">
-                  <div className={`p-5 ${TOOL_BG_LIGHT[activeTool]} rounded-2xl mb-4 group-hover:scale-110 transition-transform duration-500`}>
-                    <FileUp className={TOOL_TEXT[activeTool]} size={36} />
-                  </div>
-                  <p className="mb-2 text-base text-slate-700 font-semibold">
-                    ファイルをアップロード
-                  </p>
-                  <p className="text-sm text-slate-400">
-                    ここにPDFをドラッグ＆ドロップ
-                  </p>
-                </div>
-                <input 
-                  type="file" 
-                  className="hidden" 
-                  accept="application/pdf" 
-                  multiple={activeTool === 'merge'}
-                  onChange={handleFileChange}
-                />
-              </label>
-            ) : (
+{files.length === 0 ? (
+  <div
+    onDragOver={handleDragOver}
+    onDragLeave={handleDragLeave}
+    onDrop={handleDrop}
+    className={`flex flex-col items-center justify-center w-full h-72 border-2 border-dashed border-slate-200 rounded-2xl cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-all group relative overflow-hidden`}
+  >
+    <label className="flex flex-col items-center justify-center w-full h-full pt-5 pb-6 relative z-10 cursor-pointer">
+      <div className={`p-5 ${TOOL_BG_LIGHT[activeTool]} rounded-2xl mb-4 group-hover:scale-110 transition-transform duration-500`}>
+        <FileUp className={TOOL_TEXT[activeTool]} size={36} />
+      </div>
+      <p className="mb-2 text-base text-slate-700 font-semibold">
+        ファイルをアップロード
+      </p>
+      <p className="text-sm text-slate-400">
+        ここにPDFをドラッグ&ドロップ、またはクリック
+      </p>
+      <input 
+        type="file" 
+        className="hidden" 
+        accept="application/pdf" 
+        multiple={activeTool === 'merge'}
+        onChange={handleFileChange}
+      />
+    </label>
+  </div>
+) : (
+
               <div className="space-y-4">
                 <AnimatePresence mode="popLayout">
                   {files.map((item) => (
