@@ -500,7 +500,7 @@ export default function App() {
                             : 'bg-white text-cyan-600 border border-cyan-200 hover:bg-cyan-100'
                         }`}
                       >
-                        最大
+                        軽量
                         <br />
                         <span className="text-xs font-normal">品質優先</span>
                       </button>
@@ -524,9 +524,9 @@ export default function App() {
                             : 'bg-white text-cyan-600 border border-cyan-200 hover:bg-cyan-100'
                         }`}
                       >
-                        軽量
+                        最大
                         <br />
-                        <span className="text-xs font-normal">小サイズ</span>
+                        <span className="text-xs font-normal">最小サイズ</span>
                       </button>
                     </div>
                   </div>
