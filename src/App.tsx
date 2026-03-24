@@ -135,7 +135,7 @@ const processUnlock = async () => {
       const page = await pdfDoc.getPage(pageNum);
       
       // キャンバスにページを描画
-      const scale = 3; // 高品質のため3倍にスケール
+      const scale = 4; // 高品質のため4倍にスケール
       const viewport = page.getViewport({ scale });
       
       const canvas = document.createElement('canvas');
