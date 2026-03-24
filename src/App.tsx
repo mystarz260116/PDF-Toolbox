@@ -29,8 +29,6 @@ declare global {
 
 const pdfjsLib = (window as any).pdfjsLib;
 
-
-
 type Tool = 'unlock' | 'merge' | 'split' | 'compress';
 
 const TOOL_LABELS: Record<Tool, string> = {
@@ -72,7 +70,7 @@ export default function App() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-    const [compressLevel, setCompressLevel] = useState<'light' | 'standard' | 'maximum'>('standard');
+  const [compressLevel, setCompressLevel] = useState<'light' | 'standard' | 'maximum'>('standard');
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -90,8 +88,6 @@ export default function App() {
     }
   };
 
-  
-  // ✅ ここから新しいコードを追加
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -132,7 +128,6 @@ export default function App() {
       }
     }
   };
-  // ✅ ここまで新しいコード
 
   const removeFile = (id: string) => {
     setFiles(prev => prev.filter(f => f.id !== id));
@@ -153,96 +148,82 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-const processUnlock = async () => {
-  if (files.length === 0) return;
-  setIsProcessing(true);
-  setError(null);
-  try {
-    const { file, password } = files[0];
-    const arrayBuffer = await file.arrayBuffer();
-    
-    console.log('ファイル名:', file.name);
-    console.log('ファイルサイズ:', file.size);
-    
-    // ✅ pdfjs-dist を使ってPDFを読み込む
-    const pdfjsLib = (window as any).pdfjsLib;
-    const pdfDoc = await pdfjsLib.getDocument({
-      data: arrayBuffer,
-      password: password || '',
-      useSystemFonts: true
-    }).promise;
-    
-    console.log('PDF読み込み成功。ページ数:', pdfDoc.numPages);
-    
-    // ✅ pdf-lib で新しいPDFを作成
-    const unlockedPdf = await PDFDocument.create();
-    
-    // ✅ 各ページをJPEG画像に変換（PNG→JPEGで圧縮）
-    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
-      console.log(`ページ ${pageNum} を処理中...`);
+  const processUnlock = async () => {
+    if (files.length === 0) return;
+    setIsProcessing(true);
+    setError(null);
+    try {
+      const { file, password } = files[0];
+      const arrayBuffer = await file.arrayBuffer();
       
-      const page = await pdfDoc.getPage(pageNum);
+      console.log('ファイル名:', file.name);
+      console.log('ファイルサイズ:', file.size);
       
-      // キャンバスにページを描画
-      const scale = 4; // 品質設定
-      const viewport = page.getViewport({ scale });
-      
-      const canvas = document.createElement('canvas');
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      
-      const context = canvas.getContext('2d');
-      if (!context) {
-        throw new Error('キャンバスコンテキストが取得できません');
-      }
-      
-      await page.render({
-        canvasContext: context,
-        viewport: viewport
+      const pdfjsLib = (window as any).pdfjsLib;
+      const pdfDoc = await pdfjsLib.getDocument({
+        data: arrayBuffer,
+        password: password || '',
+        useSystemFonts: true
       }).promise;
       
-      // ✅ キャンバスからJPEG画像データを取得（圧縮）
-      const imageData = canvas.toDataURL('image/jpeg', 0.85); // 85%圧縮
-      const imageBytes = await fetch(imageData).then(res => res.arrayBuffer());
+      console.log('PDF読み込み成功。ページ数:', pdfDoc.numPages);
       
-      // pdf-lib に画像を埋め込み
-      const image = await unlockedPdf.embedJpg(imageBytes);
+      const unlockedPdf = await PDFDocument.create();
       
-      // 新しいページを追加
-      const pdfPage = unlockedPdf.addPage([viewport.width / scale, viewport.height / scale]);
-      pdfPage.drawImage(image, {
-        x: 0,
-        y: 0,
-        width: viewport.width / scale,
-        height: viewport.height / scale
-      });
+      for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+        console.log(`ページ ${pageNum} を処理中...`);
+        
+        const page = await pdfDoc.getPage(pageNum);
+        const scale = 4;
+        const viewport = page.getViewport({ scale });
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        
+        const context = canvas.getContext('2d');
+        if (!context) {
+          throw new Error('キャンバスコンテキストが取得できません');
+        }
+        
+        await page.render({
+          canvasContext: context,
+          viewport: viewport
+        }).promise;
+        
+        const imageData = canvas.toDataURL('image/jpeg', 0.85);
+        const imageBytes = await fetch(imageData).then(res => res.arrayBuffer());
+        
+        const image = await unlockedPdf.embedJpg(imageBytes);
+        const pdfPage = unlockedPdf.addPage([viewport.width / scale, viewport.height / scale]);
+        pdfPage.drawImage(image, {
+          x: 0,
+          y: 0,
+          width: viewport.width / scale,
+          height: viewport.height / scale
+        });
+      }
+      
+      const pdfBytes = await unlockedPdf.save();
+      
+      console.log('PDF保存成功。ファイルサイズ:', pdfBytes.length);
+      
+      downloadBlob(
+        new Blob([pdfBytes], { type: 'application/pdf' }), 
+        `unlocked_${file.name}`
+      );
+      
+      setFiles([]);
+      setError(null);
+      console.log('ロック解除完了！');
+    } catch (err: any) {
+      console.error('Unlock error:', err);
+      console.error('エラー詳細:', err.message);
+      setError(`ロック解除に失敗しました。\nエラー: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
     }
-    
-    // ✅ 新しいPDFを保存
-    const pdfBytes = await unlockedPdf.save();
-    
-    console.log('PDF保存成功。ファイルサイズ:', pdfBytes.length);
-    
-    downloadBlob(
-      new Blob([pdfBytes], { type: 'application/pdf' }), 
-      `unlocked_${file.name}`
-    );
-    
-    setFiles([]);
-    setError(null);
-    console.log('ロック解除完了！');
-  } catch (err: any) {
-    console.error('Unlock error:', err);
-    console.error('エラー詳細:', err.message);
-    setError(`ロック解除に失敗しました。\nエラー: ${err.message}`);
-  } finally {
-    setIsProcessing(false);
-  }
-};
-
-
-
-
+  };
 
   const processMerge = async () => {
     if (files.length < 2) return;
@@ -290,117 +271,108 @@ const processUnlock = async () => {
   };
 
   const processCompress = async () => {
-  if (files.length === 0) return;
-  setIsProcessing(true);
-  setError(null);
-  try {
-    const { file, password } = files[0];
-    const arrayBuffer = await file.arrayBuffer();
-    
-    console.log('ファイル名:', file.name);
-    console.log('圧縮レベル:', compressLevel);
-    console.log('元のファイルサイズ:', file.size);
-    
-    // ✅ pdfjs-dist を使ってPDFを読み込む
-    const pdfjsLib = (window as any).pdfjsLib;
-    const pdfDoc = await pdfjsLib.getDocument({
-      data: arrayBuffer,
-      password: password || '',
-      useSystemFonts: true
-    }).promise;
-    
-    console.log('PDF読み込み成功。ページ数:', pdfDoc.numPages);
-    
-    // ✅ pdf-lib で新しいPDFを作成
-    const compressedPdf = await PDFDocument.create();
-    
-    // ✅ 圧縮レベルに応じてスケールを設定
-    let scale = 2;
-    let jpegQuality = 0.85;
-    
-    if (compressLevel === 'light') {
-      scale = 2;
-      jpegQuality = 0.90; // 高品質（圧縮少なめ）
-    } else if (compressLevel === 'standard') {
-      scale = 1.5;
-      jpegQuality = 0.75; // 標準品質（バランス）
-    } else if (compressLevel === 'maximum') {
-      scale = 1;
-      jpegQuality = 0.60; // 低品質（圧縮強め）
-    }
-    
-    // ✅ 各ページをJPEG画像に変換して圧縮
-    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
-      console.log(`ページ ${pageNum} を圧縮中... (${compressLevel})`);
+    if (files.length === 0) return;
+    setIsProcessing(true);
+    setError(null);
+    try {
+      const { file, password } = files[0];
+      const arrayBuffer = await file.arrayBuffer();
       
-      const page = await pdfDoc.getPage(pageNum);
-      const viewport = page.getViewport({ scale });
+      console.log('ファイル名:', file.name);
+      console.log('圧縮レベル:', compressLevel);
+      console.log('元のファイルサイズ:', file.size);
       
-      const canvas = document.createElement('canvas');
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      
-      const context = canvas.getContext('2d');
-      if (!context) {
-        throw new Error('キャンバスコンテキストが取得できません');
-      }
-      
-      await page.render({
-        canvasContext: context,
-        viewport: viewport
+      const pdfjsLib = (window as any).pdfjsLib;
+      const pdfDoc = await pdfjsLib.getDocument({
+        data: arrayBuffer,
+        password: password || '',
+        useSystemFonts: true
       }).promise;
       
-      // ✅ JPEG品質を設定して圧縮
-      const imageData = canvas.toDataURL('image/jpeg', jpegQuality);
-      const imageBytes = await fetch(imageData).then(res => res.arrayBuffer());
+      console.log('PDF読み込み成功。ページ数:', pdfDoc.numPages);
       
-      // pdf-lib に画像を埋め込み
-      const image = await compressedPdf.embedJpg(imageBytes);
+      const compressedPdf = await PDFDocument.create();
       
-      // 新しいページを追加
-      const pdfPage = compressedPdf.addPage([viewport.width / scale, viewport.height / scale]);
-      pdfPage.drawImage(image, {
-        x: 0,
-        y: 0,
-        width: viewport.width / scale,
-        height: viewport.height / scale
-      });
+      let scale = 2;
+      let jpegQuality = 0.85;
+      
+      if (compressLevel === 'light') {
+        scale = 2;
+        jpegQuality = 0.90;
+      } else if (compressLevel === 'standard') {
+        scale = 1.5;
+        jpegQuality = 0.75;
+      } else if (compressLevel === 'maximum') {
+        scale = 1;
+        jpegQuality = 0.60;
+      }
+      
+      for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+        console.log(`ページ ${pageNum} を圧縮中... (${compressLevel})`);
+        
+        const page = await pdfDoc.getPage(pageNum);
+        const viewport = page.getViewport({ scale });
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        
+        const context = canvas.getContext('2d');
+        if (!context) {
+          throw new Error('キャンバスコンテキストが取得できません');
+        }
+        
+        await page.render({
+          canvasContext: context,
+          viewport: viewport
+        }).promise;
+        
+        const imageData = canvas.toDataURL('image/jpeg', jpegQuality);
+        const imageBytes = await fetch(imageData).then(res => res.arrayBuffer());
+        
+        const image = await compressedPdf.embedJpg(imageBytes);
+        const pdfPage = compressedPdf.addPage([viewport.width / scale, viewport.height / scale]);
+        pdfPage.drawImage(image, {
+          x: 0,
+          y: 0,
+          width: viewport.width / scale,
+          height: viewport.height / scale
+        });
+      }
+      
+      const pdfBytes = await compressedPdf.save();
+      
+      const originalSize = file.size;
+      const compressedSize = pdfBytes.length;
+      const ratio = ((1 - compressedSize / originalSize) * 100).toFixed(1);
+      
+      console.log('圧縮完了！');
+      console.log('元のサイズ:', (originalSize / 1024 / 1024).toFixed(2), 'MB');
+      console.log('圧縮後:', (compressedSize / 1024 / 1024).toFixed(2), 'MB');
+      console.log('圧縮率:', ratio, '%');
+      
+      downloadBlob(
+        new Blob([pdfBytes], { type: 'application/pdf' }), 
+        `compressed_${file.name}`
+      );
+      
+      setFiles([]);
+      setError(null);
+    } catch (err: any) {
+      console.error('Compress error:', err);
+      console.error('エラー詳細:', err.message);
+      setError(`PDFの圧縮に失敗しました。\nエラー: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
     }
-    
-    // ✅ 圧縮されたPDFを保存
-    const pdfBytes = await compressedPdf.save();
-    
-    const originalSize = file.size;
-    const compressedSize = pdfBytes.length;
-    const ratio = ((1 - compressedSize / originalSize) * 100).toFixed(1);
-    
-    console.log('圧縮完了！');
-    console.log('元のサイズ:', (originalSize / 1024 / 1024).toFixed(2), 'MB');
-    console.log('圧縮後:', (compressedSize / 1024 / 1024).toFixed(2), 'MB');
-    console.log('圧縮率:', ratio, '%');
-    
-    downloadBlob(
-      new Blob([pdfBytes], { type: 'application/pdf' }), 
-      `compressed_${file.name}`
-    );
-    
-    setFiles([]);
-    setError(null);
-  } catch (err: any) {
-    console.error('Compress error:', err);
-    console.error('エラー詳細:', err.message);
-    setError(`PDFの圧縮に失敗しました。\nエラー: ${err.message}`);
-  } finally {
-    setIsProcessing(false);
-  }
-};
+  };
 
-const handleAction = () => {
-  if (activeTool === 'unlock') processUnlock();
-  else if (activeTool === 'merge') processMerge();
-  else if (activeTool === 'split') processSplit();
-  else if (activeTool === 'compress') processCompress();
-};
+  const handleAction = () => {
+    if (activeTool === 'unlock') processUnlock();
+    else if (activeTool === 'merge') processMerge();
+    else if (activeTool === 'split') processSplit();
+    else if (activeTool === 'compress') processCompress();
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center py-12 px-4">
@@ -423,7 +395,7 @@ const handleAction = () => {
         </header>
 
         {/* Tool Selector */}
-        <div className="flex flex-wrap p-1.5 bg-slate-200/50 rounded-2xl mb-8">
+        <div className="grid grid-cols-2 gap-2 p-1.5 bg-slate-200/50 rounded-2xl mb-8">
           {(['merge', 'split', 'compress', 'unlock'] as Tool[]).map((tool) => (
             <button
               key={tool}
@@ -432,7 +404,7 @@ const handleAction = () => {
                 setFiles([]);
                 setError(null);
               }}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all duration-300 ${
+              className={`flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all duration-300 ${
                 activeTool === tool 
                   ? `${TOOL_COLORS[tool]} text-white shadow-lg` 
                   : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
@@ -441,7 +413,7 @@ const handleAction = () => {
               {tool === 'unlock' && <Unlock size={16} />}
               {tool === 'merge' && <Combine size={16} />}
               {tool === 'split' && <Scissors size={16} />}
-              {tool === 'compress' && <FileUp size={16} />}  // ← この1行を追加
+              {tool === 'compress' && <FileUp size={16} />}
               <span>{TOOL_LABELS[tool]}</span>
             </button>
           ))}
@@ -450,34 +422,33 @@ const handleAction = () => {
         {/* Main Workspace */}
         <div className="bg-white rounded-3xl border border-slate-200 shadow-xl shadow-slate-200/50 overflow-hidden">
           <div className="p-8">
-{files.length === 0 ? (
-  <div
-    onDragOver={handleDragOver}
-    onDragLeave={handleDragLeave}
-    onDrop={handleDrop}
-    className={`flex flex-col items-center justify-center w-full h-72 border-2 border-dashed border-slate-200 rounded-2xl cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-all group relative overflow-hidden`}
-  >
-    <label className="flex flex-col items-center justify-center w-full h-full pt-5 pb-6 relative z-10 cursor-pointer">
-      <div className={`p-5 ${TOOL_BG_LIGHT[activeTool]} rounded-2xl mb-4 group-hover:scale-110 transition-transform duration-500`}>
-        <FileUp className={TOOL_TEXT[activeTool]} size={36} />
-      </div>
-      <p className="mb-2 text-base text-slate-700 font-semibold">
-        ファイルをアップロード
-      </p>
-      <p className="text-sm text-slate-400">
-        ここにPDFをドラッグ&ドロップ、またはクリック
-      </p>
-      <input 
-        type="file" 
-        className="hidden" 
-        accept="application/pdf" 
-        multiple={activeTool === 'merge'}
-        onChange={handleFileChange}
-      />
-    </label>
-  </div>
-) : (
-
+            {files.length === 0 ? (
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`flex flex-col items-center justify-center w-full h-72 border-2 border-dashed border-slate-200 rounded-2xl cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-all group relative overflow-hidden`}
+              >
+                <label className="flex flex-col items-center justify-center w-full h-full pt-5 pb-6 relative z-10 cursor-pointer">
+                  <div className={`p-5 ${TOOL_BG_LIGHT[activeTool]} rounded-2xl mb-4 group-hover:scale-110 transition-transform duration-500`}>
+                    <FileUp className={TOOL_TEXT[activeTool]} size={36} />
+                  </div>
+                  <p className="mb-2 text-base text-slate-700 font-semibold">
+                    ファイルをアップロード
+                  </p>
+                  <p className="text-sm text-slate-400">
+                    ここにPDFをドラッグ&ドロップ、またはクリック
+                  </p>
+                  <input 
+                    type="file" 
+                    className="hidden" 
+                    accept="application/pdf" 
+                    multiple={activeTool === 'merge'}
+                    onChange={handleFileChange}
+                  />
+                </label>
+              </div>
+            ) : (
               <div className="space-y-4">
                 <AnimatePresence mode="popLayout">
                   {files.map((item) => (
@@ -561,21 +532,20 @@ const handleAction = () => {
                   </div>
                 )}
 
-{activeTool === 'merge' && (
-  <div
-    onDragOver={handleDragOver}
-    onDragLeave={handleDragLeave}
-    onDrop={handleDrop}
-    className="flex items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-100 rounded-2xl cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-200 transition-all text-sm text-indigo-500 font-semibold"
-  >
-    <label className="flex items-center justify-center gap-2 w-full cursor-pointer">
-      <Plus size={18} />
-      さらにファイルを追加
-      <input type="file" className="hidden" accept="application/pdf" multiple onChange={handleFileChange} />
-    </label>
-  </div>
-)}
-
+                {activeTool === 'merge' && (
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    className="flex items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-100 rounded-2xl cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-200 transition-all text-sm text-indigo-500 font-semibold"
+                  >
+                    <label className="flex items-center justify-center gap-2 w-full cursor-pointer">
+                      <Plus size={18} />
+                      さらにファイルを追加
+                      <input type="file" className="hidden" accept="application/pdf" multiple onChange={handleFileChange} />
+                    </label>
+                  </div>
+                )}
 
                 <div className="pt-6">
                   <button
@@ -594,7 +564,7 @@ const handleAction = () => {
                         {activeTool === 'unlock' && 'ロック解除して保存'}
                         {activeTool === 'merge' && '結合して保存'}
                         {activeTool === 'split' && '分割して保存'}
-                        {activeTool === 'compress' && '圧縮して保存'}  // ← この1行を追加
+                        {activeTool === 'compress' && '圧縮して保存'}
                       </>
                     )}
                   </button>
