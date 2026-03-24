@@ -423,7 +423,7 @@ const handleAction = () => {
         </header>
 
         {/* Tool Selector */}
-        <div className="flex p-1.5 bg-slate-200/50 rounded-2xl mb-8">
+        <div className="flex flex-wrap p-1.5 bg-slate-200/50 rounded-2xl mb-8">
           {(['merge', 'split', 'compress', 'unlock'] as Tool[]).map((tool) => (
             <button
               key={tool}
