@@ -20,6 +20,12 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
+import * as pdfjsLib from 'pdfjs-dist';
+
+// PDFワーカーの設定
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+
+
 type Tool = 'unlock' | 'merge' | 'split';
 
 const TOOL_LABELS: Record<Tool, string> = {
@@ -101,34 +107,64 @@ const processUnlock = async () => {
     const { file, password } = files[0];
     const arrayBuffer = await file.arrayBuffer();
     
-    // ✅ デバッグ情報をログ出力
     console.log('ファイル名:', file.name);
-    console.log('ファイルサイズ:', file.size);
-    console.log('パスワード入力:', password ? '入力されている' : '入力されていない');
+    console.log('パスワード:', password ? '入力されている' : '入力されていない');
     
-    // ✅ 【重要】ignoreEncryption: true を追加
-    // これで暗号化されたPDFを読み込める
-    console.log('PDFを読み込み中...');
-    const sourcePdf = await PDFDocument.load(arrayBuffer, { 
+    // ✅ pdfjs-dist を使ってPDFを読み込む
+    const pdfDoc = await pdfjsLib.getDocument({
+      data: arrayBuffer,
       password: password || '',
-      ignoreEncryption: true
-    } as any);
+      useSystemFonts: true
+    }).promise;
     
-    console.log('PDF読み込み成功。ページ数:', sourcePdf.getPageCount());
+    console.log('PDF読み込み成功。ページ数:', pdfDoc.numPages);
     
-    // ✅ 新しいPDFを作成（暗号化なしで）
+    // ✅ pdf-lib で新しいPDFを作成
     const unlockedPdf = await PDFDocument.create();
     
-    // ✅ すべてのページをコピー
-    const pageIndices = sourcePdf.getPageIndices();
-    console.log('ページインデックス:', pageIndices);
+    // ✅ pdfjs-dist で読み込んだPDFから、各ページをキャンバスに描画
+    // そしてそれを pdf-lib に追加する
+    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+      console.log(`ページ ${pageNum} を処理中...`);
+      
+      const page = await pdfDoc.getPage(pageNum);
+      
+      // キャンバスにページを描画
+      const scale = 2; // 高品質のため2倍にスケール
+      const viewport = page.getViewport({ scale });
+      
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      
+      const context = canvas.getContext('2d');
+      if (!context) {
+        throw new Error('キャンバスコンテキストが取得できません');
+      }
+      
+      await page.render({
+        canvasContext: context,
+        viewport: viewport
+      }).promise;
+      
+      // キャンバスから画像データを取得
+      const imageData = canvas.toDataURL('image/png');
+      const imageBytes = await fetch(imageData).then(res => res.arrayBuffer());
+      
+      // pdf-lib に画像を埋め込み
+      const image = await unlockedPdf.embedPng(imageBytes);
+      
+      // 新しいページを追加
+      const pdfPage = unlockedPdf.addPage([viewport.width / scale, viewport.height / scale]);
+      pdfPage.drawImage(image, {
+        x: 0,
+        y: 0,
+        width: viewport.width / scale,
+        height: viewport.height / scale
+      });
+    }
     
-    const copiedPages = await unlockedPdf.copyPages(sourcePdf, pageIndices);
-    copiedPages.forEach((page) => unlockedPdf.addPage(page));
-    
-    console.log('ページコピー完了。新規PDF内のページ数:', unlockedPdf.getPageCount());
-    
-    // ✅ 暗号化なしでPDFを保存
+    // ✅ 新しいPDFを保存
     const pdfBytes = await unlockedPdf.save();
     
     console.log('PDF保存成功。ファイルサイズ:', pdfBytes.length);
@@ -138,18 +174,18 @@ const processUnlock = async () => {
       `unlocked_${file.name}`
     );
     
-    setFiles([]); // 処理後にファイルをリセット
+    setFiles([]);
     setError(null);
     console.log('ロック解除完了！');
   } catch (err: any) {
     console.error('Unlock error:', err);
     console.error('エラー詳細:', err.message);
-    console.error('スタックトレース:', err.stack);
-    setError(`ロック解除に失敗しました。\nエラー: ${err.message}\n\nコンソールで詳細を確認してください。`);
+    setError(`ロック解除に失敗しました。\nエラー: ${err.message}`);
   } finally {
     setIsProcessing(false);
   }
 };
+
 
 
 
