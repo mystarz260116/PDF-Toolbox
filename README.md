@@ -1,20 +1,40 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# PDF Toolbox
 
-# Run and deploy your AI Studio app
+ブラウザで簡単にPDF処理ができるツールです。複数のPDFの結合、分割、ロック解除がドラッグ&ドロップで実現できます。
 
-This contains everything you need to run your app locally.
+## 🎯 機能
 
-View your app in AI Studio: https://ai.studio/apps/3f28b50c-c857-4acb-95a5-78b678902d2f
+- **PDFの結合** - 複数のPDFファイルを1つにまとめる
+- **PDFの分割** - PDFを1ページごとにバラバラにして抽出
+- **PDFのロック解除** - パスワード保護されたPDFを解除
 
-## Run Locally
+## ✨ 特徴
 
-**Prerequisites:**  Node.js
+- **ブラウザ完結** - インストール不要、ブラウザで動作
+- **セキュア** - ファイルがサーバーに送信されない。すべての処理がブラウザ内で完結
+- **シンプルUI** - ドラッグ&ドロップで直感的に操作可能
+- **高速処理** - クライアント側で処理するため、高速です
 
+## 🚀 デモ
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+https://pdf-toolbox-rho.vercel.app/
+
+## 🛠️ 技術スタック
+
+- **フロントエンド:** React 19, TypeScript
+- **ビルドツール:** Vite
+- **UI ライブラリ:** Tailwind CSS, Lucide React, Framer Motion
+- **PDF処理:** pdf-lib, pdfjs-dist
+
+## 📦 セットアップ
+
+### 必要な環境
+
+- Node.js 18以上
+
+### インストール
+
+1. リポジトリをクローン
+   ```bash
+   git clone https://github.com/mystarz260116/PDF-Toolbox.git
+   cd PDF-Toolbox
