@@ -20,10 +20,15 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-import * as pdfjsLib from 'pdfjs-dist';
+// pdfjs-distをCDNから読み込む
+declare global {
+  interface Window {
+    pdfjsWorker: any;
+  }
+}
 
-// PDFワーカーの設定
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+const pdfjsLib = (window as any).pdfjsLib;
+
 
 
 type Tool = 'unlock' | 'merge' | 'split';
