@@ -101,23 +101,37 @@ const processUnlock = async () => {
     const { file, password } = files[0];
     const arrayBuffer = await file.arrayBuffer();
     
-    // ✅ パスワードを指定してPDFを読み込む
+    // ✅ デバッグ情報をログ出力
+    console.log('ファイル名:', file.name);
+    console.log('ファイルサイズ:', file.size);
+    console.log('パスワード入力:', password ? '入力されている' : '入力されていない');
+    
+    // ✅ 【重要】ignoreEncryption: true を追加
+    // これで暗号化されたPDFを読み込める
+    console.log('PDFを読み込み中...');
     const sourcePdf = await PDFDocument.load(arrayBuffer, { 
-      password: password || ''
+      password: password || '',
+      ignoreEncryption: true
     } as any);
     
-    // ✅ 新しいPDFを作成（重要：暗号化なしで）
+    console.log('PDF読み込み成功。ページ数:', sourcePdf.getPageCount());
+    
+    // ✅ 新しいPDFを作成（暗号化なしで）
     const unlockedPdf = await PDFDocument.create();
     
     // ✅ すべてのページをコピー
     const pageIndices = sourcePdf.getPageIndices();
+    console.log('ページインデックス:', pageIndices);
+    
     const copiedPages = await unlockedPdf.copyPages(sourcePdf, pageIndices);
     copiedPages.forEach((page) => unlockedPdf.addPage(page));
     
-    // ✅ 暗号化を明示的に削除
-    // pdf-libでは save() の時点で暗号化されないので、
-    // ここで追加処理は不要ですが、念のため確認します
+    console.log('ページコピー完了。新規PDF内のページ数:', unlockedPdf.getPageCount());
+    
+    // ✅ 暗号化なしでPDFを保存
     const pdfBytes = await unlockedPdf.save();
+    
+    console.log('PDF保存成功。ファイルサイズ:', pdfBytes.length);
     
     downloadBlob(
       new Blob([pdfBytes], { type: 'application/pdf' }), 
@@ -125,13 +139,18 @@ const processUnlock = async () => {
     );
     
     setFiles([]); // 処理後にファイルをリセット
+    setError(null);
+    console.log('ロック解除完了！');
   } catch (err: any) {
     console.error('Unlock error:', err);
-    setError('PDFのロック解除に失敗しました。パスワードが正しいか、対応したPDFか確認してください。');
+    console.error('エラー詳細:', err.message);
+    console.error('スタックトレース:', err.stack);
+    setError(`ロック解除に失敗しました。\nエラー: ${err.message}\n\nコンソールで詳細を確認してください。`);
   } finally {
     setIsProcessing(false);
   }
 };
+
 
 
   const processMerge = async () => {
