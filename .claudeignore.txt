@@ -1,0 +1,27 @@
+# 環境変数ファイル（APIキー・パスワードが入っている）
+.env
+.env.*
+.env.local
+.env.production
+.env.development
+
+# 認証情報・秘密鍵
+*.pem
+*.key
+*.crt
+*.p12
+
+# AWSの認証情報
+.aws/
+
+# SSHの秘密鍵
+.ssh/
+
+# Firebaseの設定ファイル
+**/google-services.json
+**/GoogleService-Info.plist
+
+# パスワード・シークレット系
+**/secrets*
+**/passwords*
+.secrets/

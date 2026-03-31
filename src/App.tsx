@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useCallback } from 'react';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument } from 'pdf-lib-with-encrypt';
 import { 
   FileUp, 
   Unlock, 
@@ -16,7 +16,8 @@ import {
   ChevronRight,
   Loader2,
   AlertCircle,
-  FileText
+  FileText,
+  Lock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -29,32 +30,38 @@ declare global {
 
 const pdfjsLib = (window as any).pdfjsLib;
 
-
-
-type Tool = 'unlock' | 'merge' | 'split';
+type Tool = 'unlock' | 'merge' | 'split' | 'compress' | 'protect';
 
 const TOOL_LABELS: Record<Tool, string> = {
   unlock: 'ロック解除',
   merge: '結合する',
-  split: '分割する'
+  split: '分割する',
+  compress: '圧縮する',
+  protect: 'パスワード付与'
 };
 
 const TOOL_COLORS: Record<Tool, string> = {
   unlock: 'bg-rose-500',
   merge: 'bg-indigo-500',
-  split: 'bg-amber-500'
+  split: 'bg-amber-500',
+  compress: 'bg-cyan-500',
+  protect: 'bg-purple-500'
 };
 
 const TOOL_BG_LIGHT: Record<Tool, string> = {
   unlock: 'bg-rose-50',
   merge: 'bg-indigo-50',
-  split: 'bg-amber-50'
+  split: 'bg-amber-50',
+  compress: 'bg-cyan-50',
+  protect: 'bg-purple-50'
 };
 
 const TOOL_TEXT: Record<Tool, string> = {
   unlock: 'text-rose-600',
   merge: 'text-indigo-600',
-  split: 'text-amber-600'
+  split: 'text-amber-600',
+  compress: 'text-cyan-600',
+  protect: 'text-purple-600'
 };
 
 interface FileItem {
@@ -68,6 +75,9 @@ export default function App() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [compressLevel, setCompressLevel] = useState<'light' | 'standard' | 'maximum'>('standard');
+  const [protectPassword, setProtectPassword] = useState<string>('');
+  const [protectPasswordConfirm, setProtectPasswordConfirm] = useState<string>('');
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -82,6 +92,47 @@ export default function App() {
         setFiles(newFiles.slice(0, 1));
       }
       setError(null);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.classList.add('border-indigo-400', 'bg-indigo-50');
+    e.currentTarget.classList.remove('border-slate-200');
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.classList.remove('border-indigo-400', 'bg-indigo-50');
+    e.currentTarget.classList.add('border-slate-200');
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.classList.remove('border-indigo-400', 'bg-indigo-50');
+    e.currentTarget.classList.add('border-slate-200');
+    
+    if (e.dataTransfer.files) {
+      const newFiles = Array.from(e.dataTransfer.files)
+        .filter(file => file.type === 'application/pdf')
+        .map(file => ({
+          id: Math.random().toString(36).substr(2, 9),
+          file
+        }));
+      
+      if (newFiles.length > 0) {
+        if (activeTool === 'merge') {
+          setFiles(prev => [...prev, ...newFiles]);
+        } else {
+          setFiles(newFiles.slice(0, 1));
+        }
+        setError(null);
+      } else {
+        setError('PDFファイルのみアップロード可能です。');
+      }
     }
   };
 
@@ -104,95 +155,82 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-const processUnlock = async () => {
-  if (files.length === 0) return;
-  setIsProcessing(true);
-  setError(null);
-  try {
-    const { file, password } = files[0];
-    const arrayBuffer = await file.arrayBuffer();
-    
-    console.log('ファイル名:', file.name);
-    console.log('パスワード:', password ? '入力されている' : '入力されていない');
-    
-    // ✅ pdfjs-dist を使ってPDFを読み込む
-    const pdfDoc = await pdfjsLib.getDocument({
-      data: arrayBuffer,
-      password: password || '',
-      useSystemFonts: true
-    }).promise;
-    
-    console.log('PDF読み込み成功。ページ数:', pdfDoc.numPages);
-    
-    // ✅ pdf-lib で新しいPDFを作成
-    const unlockedPdf = await PDFDocument.create();
-    
-    // ✅ pdfjs-dist で読み込んだPDFから、各ページをキャンバスに描画
-    // そしてそれを pdf-lib に追加する
-    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
-      console.log(`ページ ${pageNum} を処理中...`);
+  const processUnlock = async () => {
+    if (files.length === 0) return;
+    setIsProcessing(true);
+    setError(null);
+    try {
+      const { file, password } = files[0];
+      const arrayBuffer = await file.arrayBuffer();
       
-      const page = await pdfDoc.getPage(pageNum);
+      console.log('ファイル名:', file.name);
+      console.log('ファイルサイズ:', file.size);
       
-      // キャンバスにページを描画
-      const scale = 2; // 高品質のため2倍にスケール
-      const viewport = page.getViewport({ scale });
-      
-      const canvas = document.createElement('canvas');
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      
-      const context = canvas.getContext('2d');
-      if (!context) {
-        throw new Error('キャンバスコンテキストが取得できません');
-      }
-      
-      await page.render({
-        canvasContext: context,
-        viewport: viewport
+      const pdfjsLib = (window as any).pdfjsLib;
+      const pdfDoc = await pdfjsLib.getDocument({
+        data: arrayBuffer,
+        password: password || '',
+        useSystemFonts: true
       }).promise;
       
-      // キャンバスから画像データを取得
-      const imageData = canvas.toDataURL('image/png');
-      const imageBytes = await fetch(imageData).then(res => res.arrayBuffer());
+      console.log('PDF読み込み成功。ページ数:', pdfDoc.numPages);
       
-      // pdf-lib に画像を埋め込み
-      const image = await unlockedPdf.embedPng(imageBytes);
+      const unlockedPdf = await PDFDocument.create();
       
-      // 新しいページを追加
-      const pdfPage = unlockedPdf.addPage([viewport.width / scale, viewport.height / scale]);
-      pdfPage.drawImage(image, {
-        x: 0,
-        y: 0,
-        width: viewport.width / scale,
-        height: viewport.height / scale
-      });
+      for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+        console.log(`ページ ${pageNum} を処理中...`);
+        
+        const page = await pdfDoc.getPage(pageNum);
+        const scale = 4;
+        const viewport = page.getViewport({ scale });
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        
+        const context = canvas.getContext('2d');
+        if (!context) {
+          throw new Error('キャンバスコンテキストが取得できません');
+        }
+        
+        await page.render({
+          canvasContext: context,
+          viewport: viewport
+        }).promise;
+        
+        const imageData = canvas.toDataURL('image/jpeg', 0.85);
+        const imageBytes = await fetch(imageData).then(res => res.arrayBuffer());
+        
+        const image = await unlockedPdf.embedJpg(imageBytes);
+        const pdfPage = unlockedPdf.addPage([viewport.width / scale, viewport.height / scale]);
+        pdfPage.drawImage(image, {
+          x: 0,
+          y: 0,
+          width: viewport.width / scale,
+          height: viewport.height / scale
+        });
+      }
+      
+      const pdfBytes = await unlockedPdf.save();
+      
+      console.log('PDF保存成功。ファイルサイズ:', pdfBytes.length);
+      
+      downloadBlob(
+        new Blob([pdfBytes], { type: 'application/pdf' }), 
+        `unlocked_${file.name}`
+      );
+      
+      setFiles([]);
+      setError(null);
+      console.log('ロック解除完了！');
+    } catch (err: any) {
+      console.error('Unlock error:', err);
+      console.error('エラー詳細:', err.message);
+      setError(`ロック解除に失敗しました。\nエラー: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
     }
-    
-    // ✅ 新しいPDFを保存
-    const pdfBytes = await unlockedPdf.save();
-    
-    console.log('PDF保存成功。ファイルサイズ:', pdfBytes.length);
-    
-    downloadBlob(
-      new Blob([pdfBytes], { type: 'application/pdf' }), 
-      `unlocked_${file.name}`
-    );
-    
-    setFiles([]);
-    setError(null);
-    console.log('ロック解除完了！');
-  } catch (err: any) {
-    console.error('Unlock error:', err);
-    console.error('エラー詳細:', err.message);
-    setError(`ロック解除に失敗しました。\nエラー: ${err.message}`);
-  } finally {
-    setIsProcessing(false);
-  }
-};
-
-
-
+  };
 
   const processMerge = async () => {
     if (files.length < 2) return;
@@ -239,10 +277,164 @@ const processUnlock = async () => {
     }
   };
 
+  const processCompress = async () => {
+    if (files.length === 0) return;
+    setIsProcessing(true);
+    setError(null);
+    try {
+      const { file, password } = files[0];
+      const arrayBuffer = await file.arrayBuffer();
+      
+      console.log('ファイル名:', file.name);
+      console.log('圧縮レベル:', compressLevel);
+      console.log('元のファイルサイズ:', file.size);
+      
+      const pdfjsLib = (window as any).pdfjsLib;
+      const pdfDoc = await pdfjsLib.getDocument({
+        data: arrayBuffer,
+        password: password || '',
+        useSystemFonts: true
+      }).promise;
+      
+      console.log('PDF読み込み成功。ページ数:', pdfDoc.numPages);
+      
+      const compressedPdf = await PDFDocument.create();
+      
+      let scale = 2;
+      let jpegQuality = 0.85;
+      
+      if (compressLevel === 'light') {
+        scale = 1;
+        jpegQuality = 0.60;
+      } else if (compressLevel === 'standard') {
+        scale = 1.5;
+        jpegQuality = 0.75;
+      } else if (compressLevel === 'maximum') {
+        scale = 2;
+        jpegQuality = 0.90;
+      }
+      
+      for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+        console.log(`ページ ${pageNum} を圧縮中... (${compressLevel})`);
+        
+        const page = await pdfDoc.getPage(pageNum);
+        const viewport = page.getViewport({ scale });
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        
+        const context = canvas.getContext('2d');
+        if (!context) {
+          throw new Error('キャンバスコンテキストが取得できません');
+        }
+        
+        await page.render({
+          canvasContext: context,
+          viewport: viewport
+        }).promise;
+        
+        const imageData = canvas.toDataURL('image/jpeg', jpegQuality);
+        const imageBytes = await fetch(imageData).then(res => res.arrayBuffer());
+        
+        const image = await compressedPdf.embedJpg(imageBytes);
+        const pdfPage = compressedPdf.addPage([viewport.width / scale, viewport.height / scale]);
+        pdfPage.drawImage(image, {
+          x: 0,
+          y: 0,
+          width: viewport.width / scale,
+          height: viewport.height / scale
+        });
+      }
+      
+      const pdfBytes = await compressedPdf.save();
+      
+      const originalSize = file.size;
+      const compressedSize = pdfBytes.length;
+      const ratio = ((1 - compressedSize / originalSize) * 100).toFixed(1);
+      
+      console.log('圧縮完了！');
+      console.log('元のサイズ:', (originalSize / 1024 / 1024).toFixed(2), 'MB');
+      console.log('圧縮後:', (compressedSize / 1024 / 1024).toFixed(2), 'MB');
+      console.log('圧縮率:', ratio, '%');
+      
+      downloadBlob(
+        new Blob([pdfBytes], { type: 'application/pdf' }), 
+        `compressed_${file.name}`
+      );
+      
+      setFiles([]);
+      setError(null);
+    } catch (err: any) {
+      console.error('Compress error:', err);
+      console.error('エラー詳細:', err.message);
+      setError(`PDFの圧縮に失敗しました。\nエラー: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+const processProtect = async () => {
+  if (!files.length || !password || !confirmPassword) return;
+  if (password !== confirmPassword) {
+    setError('パスワードが一致しません。');
+    return;
+  }
+  if (password.length < 4) {
+    setError('パスワードは4文字以上で設定してください。');
+    return;
+  }
+
+  setIsProcessing(true);
+  setError(null);
+
+  try {
+    const { file } = files[0];
+    const arrayBuffer = await file.arrayBuffer();
+    console.log('ファイル名:', file.name);
+    console.log('パスワード長:', password.length);
+
+    // PDF を読み込む
+    const pdfDoc = await PDFDocument.load(arrayBuffer);
+    console.log('PDF読み込み成功。ページ数:', pdfDoc.getPageCount());
+
+    // パスワード保護を設定
+    await pdfDoc.encrypt({
+      userPassword: password,
+      ownerPassword: password,
+      permissions: {
+        printing: 'highResolution',
+        modifyAnnotations: false,
+        copying: false,
+        modifyContents: false,
+      }
+    });
+
+    console.log('パスワード保護を設定しました。');
+
+    // 保存してダウンロード
+    const pdfBytes = await pdfDoc.save();
+    console.log('PDF保存成功。ファイルサイズ:', pdfBytes.length);
+    downloadBlob(new Blob([pdfBytes], { type: 'application/pdf' }), `protected_${file.name}`);
+    setFiles([]);
+    setPassword('');
+    setConfirmPassword('');
+    console.log('パスワード付与完了！');
+  } catch (err: any) {
+    console.error('Protect error:', err);
+    setError(`パスワード付与に失敗しました。エラー: ${err.message}`);
+  } finally {
+    setIsProcessing(false);
+  }
+};
+
+
   const handleAction = () => {
     if (activeTool === 'unlock') processUnlock();
     else if (activeTool === 'merge') processMerge();
     else if (activeTool === 'split') processSplit();
+    else if (activeTool === 'compress') processCompress();
+    else if (activeTool === 'protect') processProtect();
   };
 
   return (
@@ -258,6 +450,8 @@ const processUnlock = async () => {
               {activeTool === 'unlock' && <Unlock size={24} />}
               {activeTool === 'merge' && <Combine size={24} />}
               {activeTool === 'split' && <Scissors size={24} />}
+              {activeTool === 'compress' && <FileUp size={24} />}
+              {activeTool === 'protect' && <Lock size={24} />}
             </div>
           </div>
           <h1 className="text-4xl font-bold tracking-tight text-slate-900 mb-2">PDF Toolbox</h1>
@@ -265,8 +459,8 @@ const processUnlock = async () => {
         </header>
 
         {/* Tool Selector */}
-        <div className="flex p-1.5 bg-slate-200/50 rounded-2xl mb-8">
-          {(['merge', 'split', 'unlock'] as Tool[]).map((tool) => (
+        <div className="grid grid-cols-2 gap-2 p-1.5 bg-slate-200/50 rounded-2xl mb-8">
+          {(['merge', 'split', 'compress', 'protect', 'unlock'] as Tool[]).map((tool) => (
             <button
               key={tool}
               onClick={() => {
@@ -274,7 +468,7 @@ const processUnlock = async () => {
                 setFiles([]);
                 setError(null);
               }}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all duration-300 ${
+              className={`flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all duration-300 ${
                 activeTool === tool 
                   ? `${TOOL_COLORS[tool]} text-white shadow-lg` 
                   : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
@@ -283,6 +477,8 @@ const processUnlock = async () => {
               {tool === 'unlock' && <Unlock size={16} />}
               {tool === 'merge' && <Combine size={16} />}
               {tool === 'split' && <Scissors size={16} />}
+              {tool === 'compress' && <FileUp size={16} />}
+              {tool === 'protect' && <Lock size={16} />}
               <span>{TOOL_LABELS[tool]}</span>
             </button>
           ))}
@@ -292,8 +488,13 @@ const processUnlock = async () => {
         <div className="bg-white rounded-3xl border border-slate-200 shadow-xl shadow-slate-200/50 overflow-hidden">
           <div className="p-8">
             {files.length === 0 ? (
-              <label className={`flex flex-col items-center justify-center w-full h-72 border-2 border-dashed border-slate-200 rounded-2xl cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-all group relative overflow-hidden`}>
-                <div className="flex flex-col items-center justify-center pt-5 pb-6 relative z-10">
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`flex flex-col items-center justify-center w-full h-72 border-2 border-dashed border-slate-200 rounded-2xl cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-all group relative overflow-hidden`}
+              >
+                <label className="flex flex-col items-center justify-center w-full h-full pt-5 pb-6 relative z-10 cursor-pointer">
                   <div className={`p-5 ${TOOL_BG_LIGHT[activeTool]} rounded-2xl mb-4 group-hover:scale-110 transition-transform duration-500`}>
                     <FileUp className={TOOL_TEXT[activeTool]} size={36} />
                   </div>
@@ -301,17 +502,17 @@ const processUnlock = async () => {
                     ファイルをアップロード
                   </p>
                   <p className="text-sm text-slate-400">
-                    ここにPDFをドラッグ＆ドロップ
+                    ここにPDFをドラッグ&ドロップ、またはクリック
                   </p>
-                </div>
-                <input 
-                  type="file" 
-                  className="hidden" 
-                  accept="application/pdf" 
-                  multiple={activeTool === 'merge'}
-                  onChange={handleFileChange}
-                />
-              </label>
+                  <input 
+                    type="file" 
+                    className="hidden" 
+                    accept="application/pdf" 
+                    multiple={activeTool === 'merge'}
+                    onChange={handleFileChange}
+                  />
+                </label>
+              </div>
             ) : (
               <div className="space-y-4">
                 <AnimatePresence mode="popLayout">
@@ -352,17 +553,96 @@ const processUnlock = async () => {
                   ))}
                 </AnimatePresence>
 
+                {activeTool === 'compress' && files.length > 0 && (
+                  <div className="p-4 bg-cyan-50 rounded-2xl border border-cyan-100">
+                    <p className="text-sm font-semibold text-cyan-900 mb-3">圧縮レベルを選択</p>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => setCompressLevel('light')}
+                        className={`flex-1 py-2 px-3 rounded-xl text-sm font-semibold transition-all ${
+                          compressLevel === 'light'
+                            ? 'bg-cyan-500 text-white'
+                            : 'bg-white text-cyan-600 border border-cyan-200 hover:bg-cyan-100'
+                        }`}
+                      >
+                        軽量
+                        <br />
+                        <span className="text-xs font-normal">最小サイズ</span>
+                      </button>
+                      <button
+                        onClick={() => setCompressLevel('standard')}
+                        className={`flex-1 py-2 px-3 rounded-xl text-sm font-semibold transition-all ${
+                          compressLevel === 'standard'
+                            ? 'bg-cyan-500 text-white'
+                            : 'bg-white text-cyan-600 border border-cyan-200 hover:bg-cyan-100'
+                        }`}
+                      >
+                        標準
+                        <br />
+                        <span className="text-xs font-normal">バランス</span>
+                      </button>
+                      <button
+                        onClick={() => setCompressLevel('maximum')}
+                        className={`flex-1 py-2 px-3 rounded-xl text-sm font-semibold transition-all ${
+                          compressLevel === 'maximum'
+                            ? 'bg-cyan-500 text-white'
+                            : 'bg-white text-cyan-600 border border-cyan-200 hover:bg-cyan-100'
+                        }`}
+                      >
+                        最大
+                        <br />
+                        <span className="text-xs font-normal">品質優先</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {activeTool === 'protect' && files.length > 0 && (
+                  <div className="p-4 bg-purple-50 rounded-2xl border border-purple-100">
+                    <p className="text-sm font-semibold text-purple-900 mb-3">パスワードを設定</p>
+                    <div className="space-y-3">
+                      <input
+                        type="password"
+                        placeholder="パスワード（4文字以上）"
+                        className="w-full px-4 py-2 bg-white border border-purple-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200 text-sm transition-all"
+                        value={protectPassword}
+                        onChange={(e) => setProtectPassword(e.target.value)}
+                      />
+                      <input
+                        type="password"
+                        placeholder="パスワード（確認）"
+                        className="w-full px-4 py-2 bg-white border border-purple-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200 text-sm transition-all"
+                        value={protectPasswordConfirm}
+                        onChange={(e) => setProtectPasswordConfirm(e.target.value)}
+                      />
+                      {protectPassword && protectPasswordConfirm && protectPassword !== protectPasswordConfirm && (
+                        <p className="text-xs text-red-600 font-semibold">パスワードが一致しません</p>
+                      )}
+                      {protectPassword && protectPassword.length < 4 && (
+                        <p className="text-xs text-amber-600 font-semibold">4文字以上で設定してください</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {activeTool === 'merge' && (
-                  <label className="flex items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-100 rounded-2xl cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-200 transition-all text-sm text-indigo-500 font-semibold">
-                    <Plus size={18} />
-                    さらにファイルを追加
-                    <input type="file" className="hidden" accept="application/pdf" multiple onChange={handleFileChange} />
-                  </label>
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    className="flex items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-100 rounded-2xl cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-200 transition-all text-sm text-indigo-500 font-semibold"
+                  >
+                    <label className="flex items-center justify-center gap-2 w-full cursor-pointer">
+                      <Plus size={18} />
+                      さらにファイルを追加
+                      <input type="file" className="hidden" accept="application/pdf" multiple onChange={handleFileChange} />
+                    </label>
+                  </div>
                 )}
 
                 <div className="pt-6">
                   <button
-                    disabled={isProcessing || (activeTool === 'merge' && files.length < 2) || (activeTool !== 'merge' && files.length === 0)}
+                    disabled={isProcessing || (activeTool === 'merge' && files.length < 2) || (activeTool !== 'merge' && files.length === 0) || (activeTool === 'protect' && (!protectPassword || protectPassword !== protectPasswordConfirm || protectPassword.length < 4))}
                     onClick={handleAction}
                     className={`w-full flex items-center justify-center gap-3 py-4 ${TOOL_COLORS[activeTool]} text-white rounded-2xl font-bold text-lg shadow-lg hover:brightness-110 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100 transition-all duration-300`}
                   >
@@ -377,6 +657,8 @@ const processUnlock = async () => {
                         {activeTool === 'unlock' && 'ロック解除して保存'}
                         {activeTool === 'merge' && '結合して保存'}
                         {activeTool === 'split' && '分割して保存'}
+                        {activeTool === 'compress' && '圧縮して保存'}
+                        {activeTool === 'protect' && 'パスワード付与して保存'}
                       </>
                     )}
                   </button>
