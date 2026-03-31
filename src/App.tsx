@@ -116,7 +116,7 @@ export default function App() {
     e.currentTarget.classList.add('border-slate-200');
     
     if (e.dataTransfer.files) {
-      const newFiles = Array.from(e.dataTransfer.files)
+      const newFiles = (Array.from(e.dataTransfer.files) as File[])
         .filter(file => file.type === 'application/pdf')
         .map(file => ({
           id: Math.random().toString(36).substr(2, 9),
@@ -166,7 +166,6 @@ export default function App() {
       console.log('ファイル名:', file.name);
       console.log('ファイルサイズ:', file.size);
       
-      const pdfjsLib = (window as any).pdfjsLib;
       const pdfDoc = await pdfjsLib.getDocument({
         data: arrayBuffer,
         password: password || '',
@@ -216,7 +215,7 @@ export default function App() {
       console.log('PDF保存成功。ファイルサイズ:', pdfBytes.length);
       
       downloadBlob(
-        new Blob([pdfBytes], { type: 'application/pdf' }), 
+        new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' }), 
         `unlocked_${file.name}`
       );
       
@@ -245,7 +244,7 @@ export default function App() {
         copiedPages.forEach((page) => mergedPdf.addPage(page));
       }
       const pdfBytes = await mergedPdf.save();
-      downloadBlob(new Blob([pdfBytes], { type: 'application/pdf' }), 'merged.pdf');
+      downloadBlob(new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' }), 'merged.pdf');
     } catch (err: any) {
       setError('PDFの結合に失敗しました。');
     } finally {
@@ -268,7 +267,7 @@ export default function App() {
         const [page] = await newPdf.copyPages(pdfDoc, [i]);
         newPdf.addPage(page);
         const pdfBytes = await newPdf.save();
-        downloadBlob(new Blob([pdfBytes], { type: 'application/pdf' }), `page_${i + 1}_${file.name}`);
+        downloadBlob(new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' }), `page_${i + 1}_${file.name}`);
       }
     } catch (err: any) {
       setError('PDFの分割に失敗しました。');
@@ -289,7 +288,6 @@ export default function App() {
       console.log('圧縮レベル:', compressLevel);
       console.log('元のファイルサイズ:', file.size);
       
-      const pdfjsLib = (window as any).pdfjsLib;
       const pdfDoc = await pdfjsLib.getDocument({
         data: arrayBuffer,
         password: password || '',
@@ -359,7 +357,7 @@ export default function App() {
       console.log('圧縮率:', ratio, '%');
       
       downloadBlob(
-        new Blob([pdfBytes], { type: 'application/pdf' }), 
+        new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' }), 
         `compressed_${file.name}`
       );
       
@@ -374,60 +372,64 @@ export default function App() {
     }
   };
 
-const processProtect = async () => {
-  if (!files.length || !password || !confirmPassword) return;
-  if (password !== confirmPassword) {
-    setError('パスワードが一致しません。');
-    return;
-  }
-  if (password.length < 4) {
-    setError('パスワードは4文字以上で設定してください。');
-    return;
-  }
+  const processProtect = async () => {
+    if (!files.length || !protectPassword || !protectPasswordConfirm) return;
+    if (protectPassword !== protectPasswordConfirm) {
+      setError('パスワードが一致しません。');
+      return;
+    }
+    if (protectPassword.length < 4) {
+      setError('パスワードは4文字以上で設定してください。');
+      return;
+    }
 
-  setIsProcessing(true);
-  setError(null);
+    setIsProcessing(true);
+    setError(null);
 
-  try {
-    const { file } = files[0];
-    const arrayBuffer = await file.arrayBuffer();
-    console.log('ファイル名:', file.name);
-    console.log('パスワード長:', password.length);
+    try {
+      const { file } = files[0];
+      const arrayBuffer = await file.arrayBuffer();
+      console.log('ファイル名:', file.name);
+      console.log('パスワード長:', protectPassword.length);
 
-    // PDF を読み込む
-    const pdfDoc = await PDFDocument.load(arrayBuffer);
-    console.log('PDF読み込み成功。ページ数:', pdfDoc.getPageCount());
+      // PDF を読み込む
+      const pdfDoc = await PDFDocument.load(arrayBuffer);
+      console.log('PDF読み込み成功。ページ数:', pdfDoc.getPageCount());
 
-    // パスワード保護を設定
-    await pdfDoc.encrypt({
-      userPassword: password,
-      ownerPassword: password,
-      permissions: {
-        printing: 'highResolution',
-        modifyAnnotations: false,
-        copying: false,
-        modifyContents: false,
-      }
-    });
+      // パスワード保護を設定
+      await (pdfDoc as any).encrypt({
+        userPassword: protectPassword,
+        ownerPassword: protectPassword,
+        permissions: {
+          printing: 'highResolution',
+          modifyAnnotations: false,
+          copying: false,
+          modifyContents: false,
+        }
+      });
 
-    console.log('パスワード保護を設定しました。');
+      console.log('パスワード保護を設定しました。');
 
-    // 保存してダウンロード
-    const pdfBytes = await pdfDoc.save();
-    console.log('PDF保存成功。ファイルサイズ:', pdfBytes.length);
-    downloadBlob(new Blob([pdfBytes], { type: 'application/pdf' }), `protected_${file.name}`);
-    setFiles([]);
-    setPassword('');
-    setConfirmPassword('');
-    console.log('パスワード付与完了！');
-  } catch (err: any) {
-    console.error('Protect error:', err);
-    setError(`パスワード付与に失敗しました。エラー: ${err.message}`);
-  } finally {
-    setIsProcessing(false);
-  }
-};
+      // 保存してダウンロード
+      const pdfBytes = await pdfDoc.save();
+      console.log('PDF保存成功。ファイルサイズ:', pdfBytes.length);
 
+      downloadBlob(
+        new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' }),
+        `protected_${file.name}`
+      );
+
+      setFiles([]);
+      setProtectPassword('');
+      setProtectPasswordConfirm('');
+      console.log('パスワード付与完了！');
+    } catch (err: any) {
+      console.error('Protect error:', err);
+      setError(`パスワード付与に失敗しました。エラー: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   const handleAction = () => {
     if (activeTool === 'unlock') processUnlock();
