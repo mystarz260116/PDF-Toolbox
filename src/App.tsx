@@ -402,7 +402,7 @@ export default function App() {
       const pdfDoc = await PDFDocument.load(arrayBuffer);
       
       // パスワード保護を設定
-      pdfDoc.encrypt({
+      await pdfDoc.encrypt({
         userPassword: protectPassword,
         ownerPassword: protectPassword,
         permissions: {
@@ -414,8 +414,9 @@ export default function App() {
           documentAssembly: false
         }
       });
-      
-      const pdfBytes = await pdfDoc.save();
+
+      // 暗号化PDFはuseObjectStreams: falseが必須（trueだと多くのリーダーで破損扱いになる）
+      const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
       
       console.log('パスワード付与完了！ファイルサイズ:', pdfBytes.length);
       
