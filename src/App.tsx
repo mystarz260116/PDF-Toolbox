@@ -407,11 +407,11 @@ export default function App() {
         ownerPassword: protectPassword,
         permissions: {
           printing: 'highResolution',
-          modifyingContents: false,
-          copyingOrExtracting: false,
-          annotatingAndFilllingForms: false,
+          modifying: false,
+          copying: false,
+          annotating: false,
           fillingForms: false,
-          assembling: false
+          documentAssembly: false
         }
       });
       
