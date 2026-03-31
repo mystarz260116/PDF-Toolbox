@@ -16,7 +16,8 @@ import {
   ChevronRight,
   Loader2,
   AlertCircle,
-  FileText
+  FileText,
+  Lock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -29,34 +30,38 @@ declare global {
 
 const pdfjsLib = (window as any).pdfjsLib;
 
-type Tool = 'unlock' | 'merge' | 'split' | 'compress';
+type Tool = 'unlock' | 'merge' | 'split' | 'compress' | 'protect';
 
 const TOOL_LABELS: Record<Tool, string> = {
   unlock: 'ロック解除',
   merge: '結合する',
   split: '分割する',
-  compress: '圧縮する'
+  compress: '圧縮する',
+  protect: 'パスワード付与'
 };
 
 const TOOL_COLORS: Record<Tool, string> = {
   unlock: 'bg-rose-500',
   merge: 'bg-indigo-500',
   split: 'bg-amber-500',
-  compress: 'bg-cyan-500'
+  compress: 'bg-cyan-500',
+  protect: 'bg-purple-500'
 };
 
 const TOOL_BG_LIGHT: Record<Tool, string> = {
   unlock: 'bg-rose-50',
   merge: 'bg-indigo-50',
   split: 'bg-amber-50',
-  compress: 'bg-cyan-50'
+  compress: 'bg-cyan-50',
+  protect: 'bg-purple-50'
 };
 
 const TOOL_TEXT: Record<Tool, string> = {
   unlock: 'text-rose-600',
   merge: 'text-indigo-600',
   split: 'text-amber-600',
-  compress: 'text-cyan-600'
+  compress: 'text-cyan-600',
+  protect: 'text-purple-600'
 };
 
 interface FileItem {
@@ -71,6 +76,8 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [compressLevel, setCompressLevel] = useState<'light' | 'standard' | 'maximum'>('standard');
+  const [protectPassword, setProtectPassword] = useState<string>('');
+  const [protectPasswordConfirm, setProtectPasswordConfirm] = useState<string>('');
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -367,11 +374,76 @@ export default function App() {
     }
   };
 
+  const processProtect = async () => {
+    if (files.length === 0) return;
+    if (!protectPassword) {
+      setError('パスワードを入力してください。');
+      return;
+    }
+    if (protectPassword !== protectPasswordConfirm) {
+      setError('パスワードが一致しません。');
+      return;
+    }
+    if (protectPassword.length < 4) {
+      setError('パスワードは4文字以上で設定してください。');
+      return;
+    }
+
+    setIsProcessing(true);
+    setError(null);
+    try {
+      const { file } = files[0];
+      const arrayBuffer = await file.arrayBuffer();
+      
+      console.log('ファイル名:', file.name);
+      console.log('パスワード付与中...');
+      
+      // PDFを読み込む
+      const pdfDoc = await PDFDocument.load(arrayBuffer);
+      
+      // パスワード保護を設定
+      pdfDoc.encrypt({
+        userPassword: protectPassword,
+        ownerPassword: protectPassword,
+        permissions: {
+          printing: 'highResolution',
+          modifyingContents: false,
+          copyingOrExtracting: false,
+          annotatingAndFilllingForms: false,
+          fillingForms: false,
+          assembling: false
+        }
+      });
+      
+      const pdfBytes = await pdfDoc.save();
+      
+      console.log('パスワード付与完了！ファイルサイズ:', pdfBytes.length);
+      
+      downloadBlob(
+        new Blob([pdfBytes], { type: 'application/pdf' }), 
+        `protected_${file.name}`
+      );
+      
+      setFiles([]);
+      setProtectPassword('');
+      setProtectPasswordConfirm('');
+      setError(null);
+      console.log('パスワード付与完了！');
+    } catch (err: any) {
+      console.error('Protect error:', err);
+      console.error('エラー詳細:', err.message);
+      setError(`パスワード付与に失敗しました。\nエラー: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleAction = () => {
     if (activeTool === 'unlock') processUnlock();
     else if (activeTool === 'merge') processMerge();
     else if (activeTool === 'split') processSplit();
     else if (activeTool === 'compress') processCompress();
+    else if (activeTool === 'protect') processProtect();
   };
 
   return (
@@ -388,6 +460,7 @@ export default function App() {
               {activeTool === 'merge' && <Combine size={24} />}
               {activeTool === 'split' && <Scissors size={24} />}
               {activeTool === 'compress' && <FileUp size={24} />}
+              {activeTool === 'protect' && <Lock size={24} />}
             </div>
           </div>
           <h1 className="text-4xl font-bold tracking-tight text-slate-900 mb-2">PDF Toolbox</h1>
@@ -396,7 +469,7 @@ export default function App() {
 
         {/* Tool Selector */}
         <div className="grid grid-cols-2 gap-2 p-1.5 bg-slate-200/50 rounded-2xl mb-8">
-          {(['merge', 'split', 'compress', 'unlock'] as Tool[]).map((tool) => (
+          {(['merge', 'split', 'compress', 'protect', 'unlock'] as Tool[]).map((tool) => (
             <button
               key={tool}
               onClick={() => {
@@ -414,6 +487,7 @@ export default function App() {
               {tool === 'merge' && <Combine size={16} />}
               {tool === 'split' && <Scissors size={16} />}
               {tool === 'compress' && <FileUp size={16} />}
+              {tool === 'protect' && <Lock size={16} />}
               <span>{TOOL_LABELS[tool]}</span>
             </button>
           ))}
@@ -532,6 +606,34 @@ export default function App() {
                   </div>
                 )}
 
+                {activeTool === 'protect' && files.length > 0 && (
+                  <div className="p-4 bg-purple-50 rounded-2xl border border-purple-100">
+                    <p className="text-sm font-semibold text-purple-900 mb-3">パスワードを設定</p>
+                    <div className="space-y-3">
+                      <input
+                        type="password"
+                        placeholder="パスワード（4文字以上）"
+                        className="w-full px-4 py-2 bg-white border border-purple-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200 text-sm transition-all"
+                        value={protectPassword}
+                        onChange={(e) => setProtectPassword(e.target.value)}
+                      />
+                      <input
+                        type="password"
+                        placeholder="パスワード（確認）"
+                        className="w-full px-4 py-2 bg-white border border-purple-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-200 text-sm transition-all"
+                        value={protectPasswordConfirm}
+                        onChange={(e) => setProtectPasswordConfirm(e.target.value)}
+                      />
+                      {protectPassword && protectPasswordConfirm && protectPassword !== protectPasswordConfirm && (
+                        <p className="text-xs text-red-600 font-semibold">パスワードが一致しません</p>
+                      )}
+                      {protectPassword && protectPassword.length < 4 && (
+                        <p className="text-xs text-amber-600 font-semibold">4文字以上で設定してください</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {activeTool === 'merge' && (
                   <div
                     onDragOver={handleDragOver}
@@ -549,7 +651,7 @@ export default function App() {
 
                 <div className="pt-6">
                   <button
-                    disabled={isProcessing || (activeTool === 'merge' && files.length < 2) || (activeTool !== 'merge' && files.length === 0)}
+                    disabled={isProcessing || (activeTool === 'merge' && files.length < 2) || (activeTool !== 'merge' && files.length === 0) || (activeTool === 'protect' && (!protectPassword || protectPassword !== protectPasswordConfirm || protectPassword.length < 4))}
                     onClick={handleAction}
                     className={`w-full flex items-center justify-center gap-3 py-4 ${TOOL_COLORS[activeTool]} text-white rounded-2xl font-bold text-lg shadow-lg hover:brightness-110 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100 transition-all duration-300`}
                   >
@@ -565,6 +667,7 @@ export default function App() {
                         {activeTool === 'merge' && '結合して保存'}
                         {activeTool === 'split' && '分割して保存'}
                         {activeTool === 'compress' && '圧縮して保存'}
+                        {activeTool === 'protect' && 'パスワード付与して保存'}
                       </>
                     )}
                   </button>
