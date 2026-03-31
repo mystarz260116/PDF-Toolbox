@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useCallback } from 'react';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument } from 'pdf-lib-with-encrypt';
 import { 
   FileUp, 
   Unlock, 
@@ -116,7 +116,7 @@ export default function App() {
     e.currentTarget.classList.add('border-slate-200');
     
     if (e.dataTransfer.files) {
-      const newFiles = Array.from(e.dataTransfer.files)
+      const newFiles = (Array.from(e.dataTransfer.files) as File[])
         .filter(file => file.type === 'application/pdf')
         .map(file => ({
           id: Math.random().toString(36).substr(2, 9),
@@ -216,7 +216,7 @@ export default function App() {
       console.log('PDF保存成功。ファイルサイズ:', pdfBytes.length);
       
       downloadBlob(
-        new Blob([pdfBytes], { type: 'application/pdf' }), 
+        new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' }), 
         `unlocked_${file.name}`
       );
       
@@ -245,7 +245,7 @@ export default function App() {
         copiedPages.forEach((page) => mergedPdf.addPage(page));
       }
       const pdfBytes = await mergedPdf.save();
-      downloadBlob(new Blob([pdfBytes], { type: 'application/pdf' }), 'merged.pdf');
+      downloadBlob(new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' }), 'merged.pdf');
     } catch (err: any) {
       setError('PDFの結合に失敗しました。');
     } finally {
@@ -268,7 +268,7 @@ export default function App() {
         const [page] = await newPdf.copyPages(pdfDoc, [i]);
         newPdf.addPage(page);
         const pdfBytes = await newPdf.save();
-        downloadBlob(new Blob([pdfBytes], { type: 'application/pdf' }), `page_${i + 1}_${file.name}`);
+        downloadBlob(new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' }), `page_${i + 1}_${file.name}`);
       }
     } catch (err: any) {
       setError('PDFの分割に失敗しました。');
@@ -359,7 +359,7 @@ export default function App() {
       console.log('圧縮率:', ratio, '%');
       
       downloadBlob(
-        new Blob([pdfBytes], { type: 'application/pdf' }), 
+        new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' }), 
         `compressed_${file.name}`
       );
       
@@ -420,7 +420,7 @@ export default function App() {
       console.log('パスワード付与完了！ファイルサイズ:', pdfBytes.length);
       
       downloadBlob(
-        new Blob([pdfBytes], { type: 'application/pdf' }), 
+        new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' }), 
         `protected_${file.name}`
       );
       
