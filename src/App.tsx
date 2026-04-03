@@ -170,11 +170,13 @@ export default function App() {
       const pdfDoc = await pdfjsLib.getDocument({
         data: arrayBuffer,
         password: password || '',
-        useSystemFonts: true
+        useSystemFonts: true,
+        cMapUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/cmaps/',
+        cMapPacked: true,
       }).promise;
-      
+
       console.log('PDF読み込み成功。ページ数:', pdfDoc.numPages);
-      
+
       const unlockedPdf = await PDFDocument.create();
       
       for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
@@ -293,11 +295,13 @@ export default function App() {
       const pdfDoc = await pdfjsLib.getDocument({
         data: arrayBuffer,
         password: password || '',
-        useSystemFonts: true
+        useSystemFonts: true,
+        cMapUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/cmaps/',
+        cMapPacked: true,
       }).promise;
-      
+
       console.log('PDF読み込み成功。ページ数:', pdfDoc.numPages);
-      
+
       const compressedPdf = await PDFDocument.create();
       
       let scale = 2;
@@ -404,7 +408,9 @@ export default function App() {
       const srcDoc = await pdfjsLib.getDocument({
         data: arrayBuffer,
         password: '',
-        useSystemFonts: true
+        useSystemFonts: true,
+        cMapUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/cmaps/',
+        cMapPacked: true,
       }).promise;
 
       console.log('PDF読み込み成功。ページ数:', srcDoc.numPages);
