@@ -425,6 +425,10 @@ export default function App() {
         const context = canvas.getContext('2d');
         if (!context) throw new Error('キャンバスコンテキストが取得できません');
 
+        // 白背景を塗ってからレンダリング（背景が透明のままJPEG変換すると黒になり文字が消えるため）
+        context.fillStyle = 'white';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+
         await page.render({ canvasContext: context, viewport }).promise;
 
         const imageData = canvas.toDataURL('image/jpeg', 0.92);
