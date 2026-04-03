@@ -394,15 +394,30 @@ export default function App() {
     try {
       const { file } = files[0];
       const arrayBuffer = await file.arrayBuffer();
-      
+
       console.log('ファイル名:', file.name);
       console.log('パスワード付与中...');
-      
-      // PDFを読み込む
-      const pdfDoc = await PDFDocument.load(arrayBuffer);
-      
+
+      // PDFを読み込む（既に暗号化されている場合はignoreEncryption: trueで読み込む）
+      let sourcePdf;
+      try {
+        sourcePdf = await PDFDocument.load(arrayBuffer);
+      } catch (loadErr: any) {
+        if (loadErr.message && loadErr.message.includes('encrypted')) {
+          sourcePdf = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true } as any);
+        } else {
+          throw loadErr;
+        }
+      }
+
+      // 新しいPDFにページをコピーしてコンテンツを完全に読み込む
+      // （直接encrypt()するとlazy loadingでコンテンツが空になるバグを回避）
+      const newPdf = await PDFDocument.create();
+      const copiedPages = await newPdf.copyPages(sourcePdf, sourcePdf.getPageIndices());
+      copiedPages.forEach(page => newPdf.addPage(page));
+
       // パスワード保護を設定
-      await pdfDoc.encrypt({
+      await newPdf.encrypt({
         userPassword: protectPassword,
         ownerPassword: protectPassword,
         permissions: {
@@ -416,15 +431,15 @@ export default function App() {
       });
 
       // 暗号化PDFはuseObjectStreams: falseが必須（trueだと多くのリーダーで破損扱いになる）
-      const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
-      
+      const pdfBytes = await newPdf.save({ useObjectStreams: false });
+
       console.log('パスワード付与完了！ファイルサイズ:', pdfBytes.length);
-      
+
       downloadBlob(
-        new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' }), 
+        new Blob([pdfBytes], { type: 'application/pdf' }),
         `protected_${file.name}`
       );
-      
+
       setFiles([]);
       setProtectPassword('');
       setProtectPasswordConfirm('');
