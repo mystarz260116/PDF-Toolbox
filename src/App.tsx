@@ -398,23 +398,47 @@ export default function App() {
       console.log('ファイル名:', file.name);
       console.log('パスワード付与中...');
 
-      // PDFを読み込む（既に暗号化されている場合はignoreEncryption: trueで読み込む）
-      let sourcePdf;
-      try {
-        sourcePdf = await PDFDocument.load(arrayBuffer);
-      } catch (loadErr: any) {
-        if (loadErr.message && loadErr.message.includes('encrypted')) {
-          sourcePdf = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true } as any);
-        } else {
-          throw loadErr;
-        }
-      }
+      // pdfjsLibで各ページをcanvasに描画してJPEGとして埋め込む
+      // （pdf-lib-with-encryptのencrypt()はlazy loadingと相性が悪くコンテンツが空になるため）
+      const pdfjsLib = (window as any).pdfjsLib;
+      const srcDoc = await pdfjsLib.getDocument({
+        data: arrayBuffer,
+        password: '',
+        useSystemFonts: true
+      }).promise;
 
-      // 新しいPDFにページをコピーしてコンテンツを完全に読み込む
-      // （直接encrypt()するとlazy loadingでコンテンツが空になるバグを回避）
+      console.log('PDF読み込み成功。ページ数:', srcDoc.numPages);
+
       const newPdf = await PDFDocument.create();
-      const copiedPages = await newPdf.copyPages(sourcePdf, sourcePdf.getPageIndices());
-      copiedPages.forEach(page => newPdf.addPage(page));
+
+      for (let pageNum = 1; pageNum <= srcDoc.numPages; pageNum++) {
+        console.log(`ページ ${pageNum} を処理中...`);
+
+        const page = await srcDoc.getPage(pageNum);
+        const scale = 2;
+        const viewport = page.getViewport({ scale });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('キャンバスコンテキストが取得できません');
+
+        await page.render({ canvasContext: context, viewport }).promise;
+
+        const imageData = canvas.toDataURL('image/jpeg', 0.92);
+        const imageBytes = await fetch(imageData).then(res => res.arrayBuffer());
+
+        const image = await newPdf.embedJpg(imageBytes);
+        const pdfPage = newPdf.addPage([viewport.width / scale, viewport.height / scale]);
+        pdfPage.drawImage(image, {
+          x: 0,
+          y: 0,
+          width: viewport.width / scale,
+          height: viewport.height / scale
+        });
+      }
 
       // パスワード保護を設定
       await newPdf.encrypt({
