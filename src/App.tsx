@@ -240,16 +240,60 @@ export default function App() {
     setError(null);
     try {
       const mergedPdf = await PDFDocument.create();
+      const pdfjsLib = (window as any).pdfjsLib;
+
       for (const item of files) {
+        console.log('結合中:', item.file.name);
         const arrayBuffer = await item.file.arrayBuffer();
-        const pdf = await PDFDocument.load(arrayBuffer, { password: item.password } as any);
-        const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
-        copiedPages.forEach((page) => mergedPdf.addPage(page));
+        const pdfDoc = await pdfjsLib.getDocument({
+          data: arrayBuffer,
+          password: item.password || '',
+          useSystemFonts: true,
+          cMapUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/cmaps/',
+          cMapPacked: true,
+        }).promise;
+
+        console.log(`  ページ数: ${pdfDoc.numPages}`);
+
+        for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+          const page = await pdfDoc.getPage(pageNum);
+          const scale = 2;
+          const viewport = page.getViewport({ scale });
+
+          const canvas = document.createElement('canvas');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+
+          const context = canvas.getContext('2d');
+          if (!context) throw new Error('キャンバスコンテキストが取得できません');
+
+          context.fillStyle = 'white';
+          context.fillRect(0, 0, canvas.width, canvas.height);
+
+          await page.render({ canvasContext: context, viewport }).promise;
+
+          const imageData = canvas.toDataURL('image/jpeg', 0.92);
+          const imageBytes = await fetch(imageData).then(res => res.arrayBuffer());
+
+          const image = await mergedPdf.embedJpg(imageBytes);
+          const pdfPage = mergedPdf.addPage([viewport.width / scale, viewport.height / scale]);
+          pdfPage.drawImage(image, {
+            x: 0,
+            y: 0,
+            width: viewport.width / scale,
+            height: viewport.height / scale
+          });
+        }
       }
+
       const pdfBytes = await mergedPdf.save();
-      downloadBlob(new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' }), 'merged.pdf');
+      downloadBlob(new Blob([pdfBytes], { type: 'application/pdf' }), 'merged.pdf');
+      setFiles([]);
+      setError(null);
+      console.log('結合完了！');
     } catch (err: any) {
-      setError('PDFの結合に失敗しました。');
+      console.error('Merge error:', err);
+      setError(`PDFの結合に失敗しました。\nエラー: ${err.message}`);
     } finally {
       setIsProcessing(false);
     }
@@ -592,11 +636,15 @@ export default function App() {
                         <p className="text-xs text-slate-400 font-medium">{(item.file.size / 1024 / 1024).toFixed(2)} MB</p>
                       </div>
                       
-                      {activeTool === 'unlock' && (
+                      {(activeTool === 'unlock' || activeTool === 'merge') && (
                         <input
                           type="password"
-                          placeholder="パスワード"
-                          className="text-xs px-4 py-2 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-200 w-32 transition-all"
+                          placeholder="パスワード（任意）"
+                          className={`text-xs px-4 py-2 bg-white border rounded-xl focus:outline-none w-32 transition-all ${
+                            activeTool === 'unlock'
+                              ? 'border-slate-200 focus:ring-2 focus:ring-rose-200'
+                              : 'border-slate-200 focus:ring-2 focus:ring-indigo-200'
+                          }`}
                           value={item.password || ''}
                           onChange={(e) => updatePassword(item.id, e.target.value)}
                         />
