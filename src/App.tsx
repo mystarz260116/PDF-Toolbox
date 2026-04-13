@@ -717,15 +717,11 @@ export default function App() {
                         <p className="text-xs text-slate-400 font-medium">{(item.file.size / 1024 / 1024).toFixed(2)} MB</p>
                       </div>
                       
-                      {(activeTool === 'unlock' || activeTool === 'merge') && (
+                      {activeTool === 'unlock' && (
                         <input
                           type="password"
                           placeholder="パスワード（任意）"
-                          className={`text-xs px-4 py-2 bg-white border rounded-xl focus:outline-none w-32 transition-all ${
-                            activeTool === 'unlock'
-                              ? 'border-slate-200 focus:ring-2 focus:ring-rose-200'
-                              : 'border-slate-200 focus:ring-2 focus:ring-indigo-200'
-                          }`}
+                          className="text-xs px-4 py-2 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-200 w-32 transition-all"
                           value={item.password || ''}
                           onChange={(e) => updatePassword(item.id, e.target.value)}
                         />
