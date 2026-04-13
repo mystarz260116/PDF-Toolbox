@@ -5,19 +5,20 @@
 
 import React, { useState, useCallback } from 'react';
 import { PDFDocument } from 'pdf-lib-with-encrypt';
-import { 
-  FileUp, 
-  Unlock, 
-  Combine, 
-  Scissors, 
-  Download, 
-  X, 
-  Plus, 
+import {
+  FileUp,
+  Unlock,
+  Combine,
+  Scissors,
+  Download,
+  X,
+  Plus,
   ChevronRight,
   Loader2,
   AlertCircle,
   FileText,
-  Lock
+  Lock,
+  RotateCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -30,14 +31,15 @@ declare global {
 
 const pdfjsLib = (window as any).pdfjsLib;
 
-type Tool = 'unlock' | 'merge' | 'split' | 'compress' | 'protect';
+type Tool = 'unlock' | 'merge' | 'split' | 'compress' | 'protect' | 'rotate';
 
 const TOOL_LABELS: Record<Tool, string> = {
   unlock: 'ロック解除',
   merge: '結合する',
   split: '分割する',
   compress: '圧縮する',
-  protect: 'パスワード付与'
+  protect: 'パスワード付与',
+  rotate: '回転する'
 };
 
 const TOOL_COLORS: Record<Tool, string> = {
@@ -45,7 +47,8 @@ const TOOL_COLORS: Record<Tool, string> = {
   merge: 'bg-indigo-500',
   split: 'bg-amber-500',
   compress: 'bg-cyan-500',
-  protect: 'bg-purple-500'
+  protect: 'bg-purple-500',
+  rotate: 'bg-teal-500'
 };
 
 const TOOL_BG_LIGHT: Record<Tool, string> = {
@@ -53,7 +56,8 @@ const TOOL_BG_LIGHT: Record<Tool, string> = {
   merge: 'bg-indigo-50',
   split: 'bg-amber-50',
   compress: 'bg-cyan-50',
-  protect: 'bg-purple-50'
+  protect: 'bg-purple-50',
+  rotate: 'bg-teal-50'
 };
 
 const TOOL_TEXT: Record<Tool, string> = {
@@ -61,7 +65,8 @@ const TOOL_TEXT: Record<Tool, string> = {
   merge: 'text-indigo-600',
   split: 'text-amber-600',
   compress: 'text-cyan-600',
-  protect: 'text-purple-600'
+  protect: 'text-purple-600',
+  rotate: 'text-teal-600'
 };
 
 interface FileItem {
@@ -78,6 +83,7 @@ export default function App() {
   const [compressLevel, setCompressLevel] = useState<'light' | 'standard' | 'maximum'>('standard');
   const [protectPassword, setProtectPassword] = useState<string>('');
   const [protectPasswordConfirm, setProtectPasswordConfirm] = useState<string>('');
+  const [rotateAngle, setRotateAngle] = useState<90 | 180 | 270>(90);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -532,12 +538,85 @@ export default function App() {
     }
   };
 
+  const processRotate = async () => {
+    if (files.length === 0) return;
+    setIsProcessing(true);
+    setError(null);
+    try {
+      const { file, password } = files[0];
+      const arrayBuffer = await file.arrayBuffer();
+
+      console.log('ファイル名:', file.name);
+      console.log('回転角度:', rotateAngle);
+
+      const pdfjsLib = (window as any).pdfjsLib;
+      const pdfDoc = await pdfjsLib.getDocument({
+        data: arrayBuffer,
+        password: password || '',
+        useSystemFonts: true,
+        cMapUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/cmaps/',
+        cMapPacked: true,
+      }).promise;
+
+      console.log('PDF読み込み成功。ページ数:', pdfDoc.numPages);
+
+      const rotatedPdf = await PDFDocument.create();
+
+      for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+        const page = await pdfDoc.getPage(pageNum);
+        const scale = 2;
+        // pdfjsのgetViewportにrotationを渡すと自動でwidth/heightも回転後サイズになる
+        const viewport = page.getViewport({ scale, rotation: rotateAngle });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('キャンバスコンテキストが取得できません');
+
+        context.fillStyle = 'white';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+
+        await page.render({ canvasContext: context, viewport }).promise;
+
+        const imageData = canvas.toDataURL('image/jpeg', 0.92);
+        const imageBytes = await fetch(imageData).then(res => res.arrayBuffer());
+
+        const image = await rotatedPdf.embedJpg(imageBytes);
+        const pdfPage = rotatedPdf.addPage([viewport.width / scale, viewport.height / scale]);
+        pdfPage.drawImage(image, {
+          x: 0,
+          y: 0,
+          width: viewport.width / scale,
+          height: viewport.height / scale
+        });
+      }
+
+      const pdfBytes = await rotatedPdf.save();
+      downloadBlob(
+        new Blob([pdfBytes], { type: 'application/pdf' }),
+        `rotated_${file.name}`
+      );
+
+      setFiles([]);
+      setError(null);
+      console.log('回転完了！');
+    } catch (err: any) {
+      console.error('Rotate error:', err);
+      setError(`PDFの回転に失敗しました。\nエラー: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleAction = () => {
     if (activeTool === 'unlock') processUnlock();
     else if (activeTool === 'merge') processMerge();
     else if (activeTool === 'split') processSplit();
     else if (activeTool === 'compress') processCompress();
     else if (activeTool === 'protect') processProtect();
+    else if (activeTool === 'rotate') processRotate();
   };
 
   return (
@@ -555,6 +634,7 @@ export default function App() {
               {activeTool === 'split' && <Scissors size={24} />}
               {activeTool === 'compress' && <FileUp size={24} />}
               {activeTool === 'protect' && <Lock size={24} />}
+              {activeTool === 'rotate' && <RotateCw size={24} />}
             </div>
           </div>
           <h1 className="text-4xl font-bold tracking-tight text-slate-900 mb-2">PDF Toolbox</h1>
@@ -562,8 +642,8 @@ export default function App() {
         </header>
 
         {/* Tool Selector */}
-        <div className="grid grid-cols-2 gap-2 p-1.5 bg-slate-200/50 rounded-2xl mb-8">
-          {(['merge', 'split', 'compress', 'protect', 'unlock'] as Tool[]).map((tool) => (
+        <div className="grid grid-cols-3 gap-2 p-1.5 bg-slate-200/50 rounded-2xl mb-8">
+          {(['merge', 'split', 'compress', 'protect', 'rotate', 'unlock'] as Tool[]).map((tool) => (
             <button
               key={tool}
               onClick={() => {
@@ -572,8 +652,8 @@ export default function App() {
                 setError(null);
               }}
               className={`flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all duration-300 ${
-                activeTool === tool 
-                  ? `${TOOL_COLORS[tool]} text-white shadow-lg` 
+                activeTool === tool
+                  ? `${TOOL_COLORS[tool]} text-white shadow-lg`
                   : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
               }`}
             >
@@ -582,6 +662,7 @@ export default function App() {
               {tool === 'split' && <Scissors size={16} />}
               {tool === 'compress' && <FileUp size={16} />}
               {tool === 'protect' && <Lock size={16} />}
+              {tool === 'rotate' && <RotateCw size={16} />}
               <span>{TOOL_LABELS[tool]}</span>
             </button>
           ))}
@@ -732,6 +813,35 @@ export default function App() {
                   </div>
                 )}
 
+                {activeTool === 'rotate' && files.length > 0 && (
+                  <div className="p-4 bg-teal-50 rounded-2xl border border-teal-100">
+                    <p className="text-sm font-semibold text-teal-900 mb-3">回転角度を選択</p>
+                    <div className="flex gap-3">
+                      {([90, 180, 270] as const).map((angle) => (
+                        <button
+                          key={angle}
+                          onClick={() => setRotateAngle(angle)}
+                          className={`flex-1 py-2 px-3 rounded-xl text-sm font-semibold transition-all ${
+                            rotateAngle === angle
+                              ? 'bg-teal-500 text-white'
+                              : 'bg-white text-teal-600 border border-teal-200 hover:bg-teal-100'
+                          }`}
+                        >
+                          {angle === 90 && <><RotateCw size={14} className="inline mr-1" />90°</>}
+                          {angle === 180 && <>180°</>}
+                          {angle === 270 && <><RotateCw size={14} className="inline mr-1 scale-x-[-1]" />270°</>}
+                          <br />
+                          <span className="text-xs font-normal">
+                            {angle === 90 && '時計回り'}
+                            {angle === 180 && '上下反転'}
+                            {angle === 270 && '反時計回り'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {activeTool === 'merge' && (
                   <div
                     onDragOver={handleDragOver}
@@ -766,6 +876,7 @@ export default function App() {
                         {activeTool === 'split' && '分割して保存'}
                         {activeTool === 'compress' && '圧縮して保存'}
                         {activeTool === 'protect' && 'パスワード付与して保存'}
+                        {activeTool === 'rotate' && '回転して保存'}
                       </>
                     )}
                   </button>
