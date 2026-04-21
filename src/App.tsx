@@ -84,6 +84,8 @@ export default function App() {
   const [protectPassword, setProtectPassword] = useState<string>('');
   const [protectPasswordConfirm, setProtectPasswordConfirm] = useState<string>('');
   const [rotateAngle, setRotateAngle] = useState<90 | 180 | 270>(90);
+  const [splitMode, setSplitMode] = useState<'all' | 'range'>('all');
+  const [splitRanges, setSplitRanges] = useState<string>('');
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -305,6 +307,23 @@ export default function App() {
     }
   };
 
+  const parseSplitRanges = (rangeStr: string, pageCount: number): number[][] | null => {
+    const parts = rangeStr.split(',').map(s => s.trim()).filter(Boolean);
+    if (parts.length === 0) return null;
+    const result: number[][] = [];
+    for (const part of parts) {
+      const match = part.match(/^(\d+)(?:-(\d+))?$/);
+      if (!match) return null;
+      const start = parseInt(match[1], 10);
+      const end = match[2] ? parseInt(match[2], 10) : start;
+      if (start < 1 || end > pageCount || start > end) return null;
+      const pages: number[] = [];
+      for (let p = start; p <= end; p++) pages.push(p - 1);
+      result.push(pages);
+    }
+    return result;
+  };
+
   const processSplit = async () => {
     if (files.length === 0) return;
     setIsProcessing(true);
@@ -314,13 +333,30 @@ export default function App() {
       const arrayBuffer = await file.arrayBuffer();
       const pdfDoc = await PDFDocument.load(arrayBuffer, { password } as any);
       const pageCount = pdfDoc.getPageCount();
-      
-      for (let i = 0; i < pageCount; i++) {
-        const newPdf = await PDFDocument.create();
-        const [page] = await newPdf.copyPages(pdfDoc, [i]);
-        newPdf.addPage(page);
-        const pdfBytes = await newPdf.save();
-        downloadBlob(new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' }), `page_${i + 1}_${file.name}`);
+
+      if (splitMode === 'all') {
+        for (let i = 0; i < pageCount; i++) {
+          const newPdf = await PDFDocument.create();
+          const [page] = await newPdf.copyPages(pdfDoc, [i]);
+          newPdf.addPage(page);
+          const pdfBytes = await newPdf.save();
+          downloadBlob(new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' }), `page_${i + 1}_${file.name}`);
+        }
+      } else {
+        const ranges = parseSplitRanges(splitRanges, pageCount);
+        if (!ranges) {
+          setError(`ページ範囲の形式が正しくありません。例: 1-10, 11-30（総ページ数: ${pageCount}）`);
+          return;
+        }
+        for (let ri = 0; ri < ranges.length; ri++) {
+          const pageIndices = ranges[ri];
+          const newPdf = await PDFDocument.create();
+          const copied = await newPdf.copyPages(pdfDoc, pageIndices);
+          copied.forEach(p => newPdf.addPage(p));
+          const pdfBytes = await newPdf.save();
+          const label = `part${ri + 1}_p${pageIndices[0] + 1}-${pageIndices[pageIndices.length - 1] + 1}`;
+          downloadBlob(new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' }), `${label}_${file.name}`);
+        }
       }
     } catch (err: any) {
       setError('PDFの分割に失敗しました。');
@@ -737,6 +773,50 @@ export default function App() {
                   ))}
                 </AnimatePresence>
 
+                {activeTool === 'split' && files.length > 0 && (
+                  <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                    <p className="text-sm font-semibold text-amber-900 mb-3">分割モードを選択</p>
+                    <div className="flex gap-3 mb-3">
+                      <button
+                        onClick={() => setSplitMode('all')}
+                        className={`flex-1 py-2 px-3 rounded-xl text-sm font-semibold transition-all ${
+                          splitMode === 'all'
+                            ? 'bg-amber-500 text-white'
+                            : 'bg-white text-amber-600 border border-amber-200 hover:bg-amber-100'
+                        }`}
+                      >
+                        1ページずつ
+                        <br />
+                        <span className="text-xs font-normal">全ページ個別に保存</span>
+                      </button>
+                      <button
+                        onClick={() => setSplitMode('range')}
+                        className={`flex-1 py-2 px-3 rounded-xl text-sm font-semibold transition-all ${
+                          splitMode === 'range'
+                            ? 'bg-amber-500 text-white'
+                            : 'bg-white text-amber-600 border border-amber-200 hover:bg-amber-100'
+                        }`}
+                      >
+                        ページ範囲指定
+                        <br />
+                        <span className="text-xs font-normal">まとめて分割</span>
+                      </button>
+                    </div>
+                    {splitMode === 'range' && (
+                      <div className="space-y-2">
+                        <input
+                          type="text"
+                          placeholder="例: 1-10, 11-30, 31-80"
+                          className="w-full px-4 py-2 bg-white border border-amber-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-200 text-sm transition-all"
+                          value={splitRanges}
+                          onChange={(e) => setSplitRanges(e.target.value)}
+                        />
+                        <p className="text-xs text-amber-600">カンマ区切りでページ範囲を指定。各範囲が個別のPDFとしてダウンロードされます。</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {activeTool === 'compress' && files.length > 0 && (
                   <div className="p-4 bg-cyan-50 rounded-2xl border border-cyan-100">
                     <p className="text-sm font-semibold text-cyan-900 mb-3">圧縮レベルを選択</p>
@@ -878,7 +958,9 @@ export default function App() {
                   </button>
                   {activeTool === 'split' && files.length > 0 && (
                     <p className="mt-3 text-center text-xs text-slate-400 font-medium">
-                      ※ 各ページが個別のファイルとしてダウンロードされます
+                      {splitMode === 'all'
+                        ? '※ 各ページが個別のファイルとしてダウンロードされます'
+                        : '※ 指定した範囲ごとにPDFが作成されます'}
                     </p>
                   )}
                 </div>
