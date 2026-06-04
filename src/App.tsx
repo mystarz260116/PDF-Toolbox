@@ -75,6 +75,15 @@ interface FileItem {
   password?: string;
 }
 
+// fetch(dataURL) はブラウザのセキュリティ設定によってブロックされることがあるため atob を使用
+function dataUrlToArrayBuffer(dataUrl: string): ArrayBuffer {
+  const base64 = dataUrl.split(',')[1];
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
 export default function App() {
   const [activeTool, setActiveTool] = useState<Tool>('merge');
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -211,7 +220,7 @@ export default function App() {
         }).promise;
         
         const imageData = canvas.toDataURL('image/jpeg', 0.85);
-        const imageBytes = await fetch(imageData).then(res => res.arrayBuffer());
+        const imageBytes = dataUrlToArrayBuffer(imageData);
         
         const image = await unlockedPdf.embedJpg(imageBytes);
         const pdfPage = unlockedPdf.addPage([viewport.width / scale, viewport.height / scale]);
@@ -283,7 +292,7 @@ export default function App() {
           await page.render({ canvasContext: context, viewport }).promise;
 
           const imageData = canvas.toDataURL('image/jpeg', 0.92);
-          const imageBytes = await fetch(imageData).then(res => res.arrayBuffer());
+          const imageBytes = dataUrlToArrayBuffer(imageData);
 
           const image = await mergedPdf.embedJpg(imageBytes);
           const pdfPage = mergedPdf.addPage([viewport.width / scale, viewport.height / scale]);
@@ -427,7 +436,7 @@ export default function App() {
         }).promise;
         
         const imageData = canvas.toDataURL('image/jpeg', jpegQuality);
-        const imageBytes = await fetch(imageData).then(res => res.arrayBuffer());
+        const imageBytes = dataUrlToArrayBuffer(imageData);
         
         const image = await compressedPdf.embedJpg(imageBytes);
         const pdfPage = compressedPdf.addPage([viewport.width / scale, viewport.height / scale]);
@@ -526,7 +535,7 @@ export default function App() {
         await page.render({ canvasContext: context, viewport }).promise;
 
         const imageData = canvas.toDataURL('image/jpeg', 0.92);
-        const imageBytes = await fetch(imageData).then(res => res.arrayBuffer());
+        const imageBytes = dataUrlToArrayBuffer(imageData);
 
         const image = await newPdf.embedJpg(imageBytes);
         const pdfPage = newPdf.addPage([viewport.width / scale, viewport.height / scale]);
@@ -623,8 +632,9 @@ export default function App() {
         const page = await pdfDoc.getPage(pageNum);
         const scale = 2;
         const shouldRotate = rotateMode === 'all' || (targetPages?.has(pageNum) ?? false);
-        // pdfjsのgetViewportにrotationを渡すと自動でwidth/heightも回転後サイズになる
-        const viewport = page.getViewport({ scale, rotation: shouldRotate ? rotateAngle : 0 });
+        const existingRotation = page.rotate ?? 0;
+        const totalRotation = shouldRotate ? (existingRotation + rotateAngle) % 360 : existingRotation;
+        const viewport = page.getViewport({ scale, rotation: totalRotation });
 
         const canvas = document.createElement('canvas');
         canvas.width = viewport.width;
@@ -639,7 +649,7 @@ export default function App() {
         await page.render({ canvasContext: context, viewport }).promise;
 
         const imageData = canvas.toDataURL('image/jpeg', 0.92);
-        const imageBytes = await fetch(imageData).then(res => res.arrayBuffer());
+        const imageBytes = dataUrlToArrayBuffer(imageData);
 
         const image = await rotatedPdf.embedJpg(imageBytes);
         const pdfPage = rotatedPdf.addPage([viewport.width / scale, viewport.height / scale]);
