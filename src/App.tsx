@@ -84,6 +84,8 @@ export default function App() {
   const [protectPassword, setProtectPassword] = useState<string>('');
   const [protectPasswordConfirm, setProtectPasswordConfirm] = useState<string>('');
   const [rotateAngle, setRotateAngle] = useState<90 | 180 | 270>(90);
+  const [rotateMode, setRotateMode] = useState<'all' | 'pages'>('all');
+  const [rotatePages, setRotatePages] = useState<string>('');
   const [splitMode, setSplitMode] = useState<'all' | 'range'>('all');
   const [splitRanges, setSplitRanges] = useState<string>('');
 
@@ -574,6 +576,21 @@ export default function App() {
     }
   };
 
+  const parsePageSelection = (str: string, total: number): Set<number> | null => {
+    const parts = str.split(',').map(s => s.trim()).filter(Boolean);
+    if (parts.length === 0) return null;
+    const result = new Set<number>();
+    for (const part of parts) {
+      const match = part.match(/^(\d+)(?:-(\d+))?$/);
+      if (!match) return null;
+      const start = parseInt(match[1], 10);
+      const end = match[2] ? parseInt(match[2], 10) : start;
+      if (start < 1 || end > total || start > end) return null;
+      for (let p = start; p <= end; p++) result.add(p);
+    }
+    return result;
+  };
+
   const processRotate = async () => {
     if (files.length === 0) return;
     setIsProcessing(true);
@@ -581,9 +598,6 @@ export default function App() {
     try {
       const { file, password } = files[0];
       const arrayBuffer = await file.arrayBuffer();
-
-      console.log('ファイル名:', file.name);
-      console.log('回転角度:', rotateAngle);
 
       const pdfjsLib = (window as any).pdfjsLib;
       const pdfDoc = await pdfjsLib.getDocument({
@@ -594,15 +608,23 @@ export default function App() {
         cMapPacked: true,
       }).promise;
 
-      console.log('PDF読み込み成功。ページ数:', pdfDoc.numPages);
+      let targetPages: Set<number> | null = null;
+      if (rotateMode === 'pages') {
+        targetPages = parsePageSelection(rotatePages, pdfDoc.numPages);
+        if (!targetPages) {
+          setError(`ページ指定の形式が正しくありません。例: 1, 3, 5-7（総ページ数: ${pdfDoc.numPages}）`);
+          return;
+        }
+      }
 
       const rotatedPdf = await PDFDocument.create();
 
       for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
         const page = await pdfDoc.getPage(pageNum);
         const scale = 2;
+        const shouldRotate = rotateMode === 'all' || (targetPages?.has(pageNum) ?? false);
         // pdfjsのgetViewportにrotationを渡すと自動でwidth/heightも回転後サイズになる
-        const viewport = page.getViewport({ scale, rotation: rotateAngle });
+        const viewport = page.getViewport({ scale, rotation: shouldRotate ? rotateAngle : 0 });
 
         const canvas = document.createElement('canvas');
         canvas.width = viewport.width;
@@ -637,7 +659,6 @@ export default function App() {
 
       setFiles([]);
       setError(null);
-      console.log('回転完了！');
     } catch (err: any) {
       console.error('Rotate error:', err);
       setError(`PDFの回転に失敗しました。\nエラー: ${err.message}`);
@@ -890,30 +911,69 @@ export default function App() {
                 )}
 
                 {activeTool === 'rotate' && files.length > 0 && (
-                  <div className="p-4 bg-teal-50 rounded-2xl border border-teal-100">
-                    <p className="text-sm font-semibold text-teal-900 mb-3">回転角度を選択</p>
-                    <div className="flex gap-3">
-                      {([90, 180, 270] as const).map((angle) => (
+                  <div className="p-4 bg-teal-50 rounded-2xl border border-teal-100 space-y-3">
+                    <div>
+                      <p className="text-sm font-semibold text-teal-900 mb-2">対象ページ</p>
+                      <div className="flex gap-3">
                         <button
-                          key={angle}
-                          onClick={() => setRotateAngle(angle)}
+                          onClick={() => setRotateMode('all')}
                           className={`flex-1 py-2 px-3 rounded-xl text-sm font-semibold transition-all ${
-                            rotateAngle === angle
+                            rotateMode === 'all'
                               ? 'bg-teal-500 text-white'
                               : 'bg-white text-teal-600 border border-teal-200 hover:bg-teal-100'
                           }`}
                         >
-                          {angle === 90 && <><RotateCw size={14} className="inline mr-1" />90°</>}
-                          {angle === 180 && <>180°</>}
-                          {angle === 270 && <><RotateCw size={14} className="inline mr-1 scale-x-[-1]" />270°</>}
-                          <br />
-                          <span className="text-xs font-normal">
-                            {angle === 90 && '時計回り'}
-                            {angle === 180 && '上下反転'}
-                            {angle === 270 && '反時計回り'}
-                          </span>
+                          全ページ
                         </button>
-                      ))}
+                        <button
+                          onClick={() => setRotateMode('pages')}
+                          className={`flex-1 py-2 px-3 rounded-xl text-sm font-semibold transition-all ${
+                            rotateMode === 'pages'
+                              ? 'bg-teal-500 text-white'
+                              : 'bg-white text-teal-600 border border-teal-200 hover:bg-teal-100'
+                          }`}
+                        >
+                          ページ指定
+                        </button>
+                      </div>
+                      {rotateMode === 'pages' && (
+                        <div className="mt-2 space-y-1">
+                          <input
+                            type="text"
+                            placeholder="例: 1, 3, 5-7"
+                            className="w-full px-4 py-2 bg-white border border-teal-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-200 text-sm transition-all"
+                            value={rotatePages}
+                            onChange={(e) => setRotatePages(e.target.value)}
+                          />
+                          <p className="text-xs text-teal-600">カンマ区切りでページ番号を指定。範囲指定も可能（例: 2-4）</p>
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-teal-900 mb-2">回転角度を選択</p>
+                      <div className="flex gap-3">
+                        {([90, 180, 270] as const).map((angle) => (
+                          <button
+                            key={angle}
+                            onClick={() => setRotateAngle(angle)}
+                            className={`flex-1 py-2 px-3 rounded-xl text-sm font-semibold transition-all ${
+                              rotateAngle === angle
+                                ? 'bg-teal-500 text-white'
+                                : 'bg-white text-teal-600 border border-teal-200 hover:bg-teal-100'
+                            }`}
+                          >
+                            {angle === 90 && <><RotateCw size={14} className="inline mr-1" />90°</>}
+                            {angle === 180 && <>180°</>}
+                            {angle === 270 && <><RotateCw size={14} className="inline mr-1 scale-x-[-1]" />270°</>}
+                            <br />
+                            <span className="text-xs font-normal">
+                              {angle === 90 && '時計回り'}
+                              {angle === 180 && '上下反転'}
+                              {angle === 270 && '反時計回り'}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}
