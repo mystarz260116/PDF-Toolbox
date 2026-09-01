@@ -17,7 +17,7 @@
     "better-sqlite3": "^12.4.1",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
-    "heic2any": "^0.0.4",
+    "heic-to": "^1.5.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "pdf-lib-with-encrypt": "^1.2.1",

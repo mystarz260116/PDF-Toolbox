@@ -5,7 +5,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { PDFDocument } from 'pdf-lib-with-encrypt';
-import heic2any from 'heic2any';
+import { heicTo } from 'heic-to';
 import {
   FileUp,
   Unlock,
@@ -694,8 +694,7 @@ export default function App() {
     setError(null);
     try {
       for (const item of files) {
-        const result = await heic2any({ blob: item.file, toType: 'image/jpeg', quality: 0.92 });
-        const blob = Array.isArray(result) ? result[0] : result;
+        const blob = await heicTo({ blob: item.file, type: 'image/jpeg', quality: 0.92 });
         const baseName = item.file.name.replace(/\.(heic|heif)$/i, '');
         downloadBlob(blob, `${baseName}.jpg`);
       }
