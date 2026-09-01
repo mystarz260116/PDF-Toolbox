@@ -5,6 +5,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { PDFDocument } from 'pdf-lib-with-encrypt';
+import heic2any from 'heic2any';
 import {
   FileUp,
   Unlock,
@@ -18,7 +19,8 @@ import {
   AlertCircle,
   FileText,
   Lock,
-  RotateCw
+  RotateCw,
+  Image
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -31,7 +33,7 @@ declare global {
 
 const pdfjsLib = (window as any).pdfjsLib;
 
-type Tool = 'unlock' | 'merge' | 'split' | 'compress' | 'protect' | 'rotate';
+type Tool = 'unlock' | 'merge' | 'split' | 'compress' | 'protect' | 'rotate' | 'heic2jpg';
 
 const TOOL_LABELS: Record<Tool, string> = {
   unlock: 'ロック解除',
@@ -39,7 +41,8 @@ const TOOL_LABELS: Record<Tool, string> = {
   split: '分割する',
   compress: '圧縮する',
   protect: 'パスワード付与',
-  rotate: '回転する'
+  rotate: '回転する',
+  heic2jpg: 'HEIC→JPG'
 };
 
 const TOOL_COLORS: Record<Tool, string> = {
@@ -48,7 +51,8 @@ const TOOL_COLORS: Record<Tool, string> = {
   split: 'bg-amber-500',
   compress: 'bg-cyan-500',
   protect: 'bg-purple-500',
-  rotate: 'bg-teal-500'
+  rotate: 'bg-teal-500',
+  heic2jpg: 'bg-orange-500'
 };
 
 const TOOL_BG_LIGHT: Record<Tool, string> = {
@@ -57,7 +61,8 @@ const TOOL_BG_LIGHT: Record<Tool, string> = {
   split: 'bg-amber-50',
   compress: 'bg-cyan-50',
   protect: 'bg-purple-50',
-  rotate: 'bg-teal-50'
+  rotate: 'bg-teal-50',
+  heic2jpg: 'bg-orange-50'
 };
 
 const TOOL_TEXT: Record<Tool, string> = {
@@ -66,7 +71,8 @@ const TOOL_TEXT: Record<Tool, string> = {
   split: 'text-amber-600',
   compress: 'text-cyan-600',
   protect: 'text-purple-600',
-  rotate: 'text-teal-600'
+  rotate: 'text-teal-600',
+  heic2jpg: 'text-orange-600'
 };
 
 interface FileItem {
@@ -105,7 +111,7 @@ export default function App() {
         file
       }));
       
-      if (activeTool === 'merge') {
+      if (activeTool === 'merge' || activeTool === 'heic2jpg') {
         setFiles(prev => [...prev, ...newFiles]);
       } else {
         setFiles(newFiles.slice(0, 1));
@@ -135,22 +141,27 @@ export default function App() {
     e.currentTarget.classList.add('border-slate-200');
     
     if (e.dataTransfer.files) {
-      const newFiles = (Array.from(e.dataTransfer.files) as File[])
-        .filter(file => file.type === 'application/pdf')
+      const allFiles = Array.from(e.dataTransfer.files) as File[];
+      const newFiles = allFiles
+        .filter(file =>
+          activeTool === 'heic2jpg'
+            ? /\.(heic|heif)$/i.test(file.name) || file.type === 'image/heic' || file.type === 'image/heif'
+            : file.type === 'application/pdf'
+        )
         .map(file => ({
           id: Math.random().toString(36).substr(2, 9),
           file
         }));
-      
+
       if (newFiles.length > 0) {
-        if (activeTool === 'merge') {
+        if (activeTool === 'merge' || activeTool === 'heic2jpg') {
           setFiles(prev => [...prev, ...newFiles]);
         } else {
           setFiles(newFiles.slice(0, 1));
         }
         setError(null);
       } else {
-        setError('PDFファイルのみアップロード可能です。');
+        setError(activeTool === 'heic2jpg' ? 'HEICファイルのみアップロード可能です。' : 'PDFファイルのみアップロード可能です。');
       }
     }
   };
@@ -677,6 +688,27 @@ export default function App() {
     }
   };
 
+  const processHeic2Jpg = async () => {
+    if (files.length === 0) return;
+    setIsProcessing(true);
+    setError(null);
+    try {
+      for (const item of files) {
+        const result = await heic2any({ blob: item.file, toType: 'image/jpeg', quality: 0.92 });
+        const blob = Array.isArray(result) ? result[0] : result;
+        const baseName = item.file.name.replace(/\.(heic|heif)$/i, '');
+        downloadBlob(blob, `${baseName}.jpg`);
+      }
+      setFiles([]);
+      setError(null);
+    } catch (err: any) {
+      console.error('HEIC変換エラー:', err);
+      setError(`変換に失敗しました。HEICファイルか確認してください。\nエラー: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleAction = () => {
     if (activeTool === 'unlock') processUnlock();
     else if (activeTool === 'merge') processMerge();
@@ -684,6 +716,7 @@ export default function App() {
     else if (activeTool === 'compress') processCompress();
     else if (activeTool === 'protect') processProtect();
     else if (activeTool === 'rotate') processRotate();
+    else if (activeTool === 'heic2jpg') processHeic2Jpg();
   };
 
   return (
@@ -702,6 +735,7 @@ export default function App() {
               {activeTool === 'compress' && <FileUp size={24} />}
               {activeTool === 'protect' && <Lock size={24} />}
               {activeTool === 'rotate' && <RotateCw size={24} />}
+              {activeTool === 'heic2jpg' && <Image size={24} />}
             </div>
           </div>
           <h1 className="text-4xl font-bold tracking-tight text-slate-900 mb-2">PDF Toolbox</h1>
@@ -709,8 +743,8 @@ export default function App() {
         </header>
 
         {/* Tool Selector */}
-        <div className="grid grid-cols-3 gap-2 p-1.5 bg-slate-200/50 rounded-2xl mb-8">
-          {(['merge', 'split', 'compress', 'protect', 'rotate', 'unlock'] as Tool[]).map((tool) => (
+        <div className="grid grid-cols-4 gap-2 p-1.5 bg-slate-200/50 rounded-2xl mb-8">
+          {(['merge', 'split', 'compress', 'protect', 'rotate', 'unlock', 'heic2jpg'] as Tool[]).map((tool) => (
             <button
               key={tool}
               onClick={() => {
@@ -730,6 +764,7 @@ export default function App() {
               {tool === 'compress' && <FileUp size={16} />}
               {tool === 'protect' && <Lock size={16} />}
               {tool === 'rotate' && <RotateCw size={16} />}
+              {tool === 'heic2jpg' && <Image size={16} />}
               <span>{TOOL_LABELS[tool]}</span>
             </button>
           ))}
@@ -753,13 +788,15 @@ export default function App() {
                     ファイルをアップロード
                   </p>
                   <p className="text-sm text-slate-400">
-                    ここにPDFをドラッグ&ドロップ、またはクリック
+                    {activeTool === 'heic2jpg'
+                      ? 'ここにHEICファイルをドラッグ&ドロップ、またはクリック'
+                      : 'ここにPDFをドラッグ&ドロップ、またはクリック'}
                   </p>
-                  <input 
-                    type="file" 
-                    className="hidden" 
-                    accept="application/pdf" 
-                    multiple={activeTool === 'merge'}
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept={activeTool === 'heic2jpg' ? '.heic,.heif,image/heic,image/heif' : 'application/pdf'}
+                    multiple={activeTool === 'merge' || activeTool === 'heic2jpg'}
                     onChange={handleFileChange}
                   />
                 </label>
@@ -988,24 +1025,30 @@ export default function App() {
                   </div>
                 )}
 
-                {activeTool === 'merge' && (
+                {(activeTool === 'merge' || activeTool === 'heic2jpg') && (
                   <div
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
-                    className="flex items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-100 rounded-2xl cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-200 transition-all text-sm text-indigo-500 font-semibold"
+                    className={`flex items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-100 rounded-2xl cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-200 transition-all text-sm font-semibold ${TOOL_TEXT[activeTool]}`}
                   >
                     <label className="flex items-center justify-center gap-2 w-full cursor-pointer">
                       <Plus size={18} />
                       さらにファイルを追加
-                      <input type="file" className="hidden" accept="application/pdf" multiple onChange={handleFileChange} />
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept={activeTool === 'heic2jpg' ? '.heic,.heif,image/heic,image/heif' : 'application/pdf'}
+                        multiple
+                        onChange={handleFileChange}
+                      />
                     </label>
                   </div>
                 )}
 
                 <div className="pt-6">
                   <button
-                    disabled={isProcessing || (activeTool === 'merge' && files.length < 2) || (activeTool !== 'merge' && files.length === 0) || (activeTool === 'protect' && (!protectPassword || protectPassword !== protectPasswordConfirm || protectPassword.length < 4))}
+                    disabled={isProcessing || (activeTool === 'merge' && files.length < 2) || (activeTool !== 'merge' && files.length === 0) || (activeTool === 'protect' && (!protectPassword || protectPassword !== protectPasswordConfirm || protectPassword.length < 4)) || (activeTool === 'heic2jpg' && files.length === 0)}
                     onClick={handleAction}
                     className={`w-full flex items-center justify-center gap-3 py-4 ${TOOL_COLORS[activeTool]} text-white rounded-2xl font-bold text-lg shadow-lg hover:brightness-110 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100 transition-all duration-300`}
                   >
@@ -1023,6 +1066,7 @@ export default function App() {
                         {activeTool === 'compress' && '圧縮して保存'}
                         {activeTool === 'protect' && 'パスワード付与して保存'}
                         {activeTool === 'rotate' && '回転して保存'}
+                        {activeTool === 'heic2jpg' && 'JPGに変換して保存'}
                       </>
                     )}
                   </button>
